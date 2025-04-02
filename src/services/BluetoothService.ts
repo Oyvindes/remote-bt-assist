@@ -116,6 +116,7 @@ class BluetoothService {
       
       // Add a listener for characteristic value changes
       this.serialCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+        // Fix the type conversion issue by asserting the event target correctly
         const target = event.target as BluetoothRemoteGATTCharacteristic;
         if (target && target.value) {
           const decoder = new TextDecoder('utf-8');
