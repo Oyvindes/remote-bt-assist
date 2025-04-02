@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,9 @@ export const SupportView = () => {
     console.log("SupportView: Initial sessions check:", currentSessions);
     setActiveSessions(currentSessions);
     
+    // Force a refresh from storage to catch any sessions created in other tabs/windows
+    sessionService.forceRefreshFromStorage();
+    
     return () => {
       console.log("SupportView: Removing session listener");
       sessionService.removeSessionsListener(handleSessionsUpdate);
@@ -41,6 +45,10 @@ export const SupportView = () => {
   const refreshSessions = () => {
     setIsRefreshing(true);
     console.log("SupportView: Manually refreshing sessions");
+    
+    // Force a refresh from storage
+    sessionService.forceRefreshFromStorage();
+    
     // Dump current sessions to console for debugging
     sessionService.debugDumpSessions();
     
