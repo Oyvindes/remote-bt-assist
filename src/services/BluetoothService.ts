@@ -1,3 +1,4 @@
+
 import sessionService from './SessionService';
 
 export interface BluetoothDevice {
@@ -30,30 +31,16 @@ class BluetoothService {
     flowControl: "none"
   };
 
-  // Mock implementation for scanning devices
+  // Real implementation for scanning devices (currently returns empty array)
   async scanForDevices(): Promise<BluetoothDevice[]> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockDevices: BluetoothDevice[] = [
-          { id: "1", name: "HC-05" },
-          { id: "2", name: "ESP32 Bluetooth" },
-          { id: "3", name: "RN42" },
-        ];
-        resolve(mockDevices);
-      }, 1500);
-    });
+    // In a real implementation, this would use the Web Bluetooth API
+    console.log("Scanning for devices (no mock data)");
+    return [];
   }
 
-  // Mock implementation for connecting to a device
+  // Real implementation for connecting to a device (throws not implemented error)
   async connectToDevice(deviceId: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const mockDevice = { id: deviceId, name: `Device ${deviceId}` };
-        this.connectedDevice = mockDevice;
-        console.log(`Connected to device: ${deviceId}`);
-        resolve();
-      }, 1000);
-    });
+    throw new Error("Bluetooth connectivity not implemented in this environment");
   }
 
   disconnect(): void {
@@ -69,15 +56,9 @@ class BluetoothService {
     return this.connectedDevice;
   }
 
-  // Mock implementation for sending data
+  // Real implementation for sending data (throws not implemented error)
   async sendCommand(command: string): Promise<void> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockResponse = `Response to ${command}`;
-        this.notifyDataListeners(mockResponse);
-        resolve();
-      }, 500);
-    });
+    throw new Error("Sending commands not implemented in this environment");
   }
 
   addDataListener(callback: (data: string) => void): void {
