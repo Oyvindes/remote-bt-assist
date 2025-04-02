@@ -22,9 +22,9 @@ export interface ShareSession {
 }
 
 // Error types to provide more specific information about Bluetooth errors
-export type BluetoothErrorType = 
-  | 'not-supported' 
-  | 'user-cancelled' 
+export type BluetoothErrorType =
+  | 'not-supported'
+  | 'user-cancelled'
   | 'security-error'
   | 'connection-failed'
   | 'device-disconnected'
@@ -39,6 +39,7 @@ export interface BluetoothError {
   type: BluetoothErrorType;
   message: string;
   originalError?: Error;
+  permissionState?: 'granted' | 'denied' | 'prompt' | 'unknown';
 }
 
 class BluetoothService {
@@ -59,16 +60,16 @@ class BluetoothService {
   // Helper to categorize Bluetooth errors
   private parseBluetoothError(error: any): BluetoothError {
     console.error("Bluetooth error:", error);
-    
+
     // Default unknown error
     let errorInfo: BluetoothError = {
       type: 'unknown',
       message: 'An unknown error occurred',
       originalError: error instanceof Error ? error : undefined
     };
-    
+
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
+
     // Check for specific error types
     if (errorMessage.includes('User cancelled')) {
       errorInfo = {
@@ -131,14 +132,237 @@ class BluetoothService {
         originalError: error instanceof Error ? error : undefined
       };
     }
-    
+
     return errorInfo;
+  }
+
+  // Request Bluetooth permissions explicitly
+  async requestBluetoothPermission(): Promise<boolean> {
+    // Log Bluetooth availability but don't block the request
+    const isAvailable = this.isWebBluetoothAvailable();
+    console.log("Web Bluetooth availability check (bypassing):", isAvailable);
+
+    // Continue even if isWebBluetoothAvailable returns false
+
+    try {
+      console.log("Attempting to request Bluetooth permission...");
+
+      // Wrap everything in try-catch blocks to prevent crashes
+
+      // Try to get Bluetooth availability first
+      try {
+        // Check if the method exists before calling it
+        if (navigator.bluetooth && typeof navigator.bluetooth.getAvailability === 'function') {
+          const isAvailable = await navigator.bluetooth.getAvailability();
+          console.log(`Bluetooth availability check: ${isAvailable ? 'Available' : 'Not available'}`);
+
+          if (!isAvailable) {
+            console.warn("Bluetooth is not available on this device according to getAvailability()");
+            // Continue anyway as some devices report false but still work
+          }
+        } else {
+          console.warn("getAvailability method not available on this browser");
+        }
+      } catch (availabilityError) {
+        console.warn("Could not check Bluetooth availability:", availabilityError);
+        // Continue anyway as this might fail but permission request could still work
+      }
+
+      // Check if requestDevice method exists
+      if (!navigator.bluetooth || typeof navigator.bluetooth.requestDevice !== 'function') {
+        console.error("requestDevice method not available on this browser");
+        return false;
+      }
+
+      // This will trigger the browser's permission prompt
+      // Wrap in a try-catch to prevent crashes
+      let device;
+      try {
+        console.log("Calling navigator.bluetooth.requestDevice...");
+
+        device = await navigator.bluetooth.requestDevice({
+          // Accept any Bluetooth device to make it easier
+          acceptAllDevices: true,
+          // Include all possible services we might need
+          optionalServices: [
+            'generic_access',
+            '0000ffe0-0000-1000-8000-00805f9b34fb',
+            '0000ffe1-0000-1000-8000-00805f9b34fb',
+            '0000180a-0000-1000-8000-00805f9b34fb', // Device Information Service
+            '0000180f-0000-1000-8000-00805f9b34fb'  // Battery Service
+          ]
+        });
+
+        console.log("Bluetooth permission granted for device:", device);
+      } catch (requestError) {
+        console.error("Error in requestDevice:", requestError);
+        return false;
+      }
+
+      // If we get here, permission was granted
+
+      // Try to connect to the device to verify everything works
+      try {
+        console.log("Testing connection to device...");
+        const server = await device.gatt?.connect();
+        if (server) {
+          console.log("Successfully connected to GATT server - Bluetooth is fully working");
+          // Disconnect immediately since this is just a test
+          device.gatt?.disconnect();
+        }
+      } catch (connectError) {
+        console.warn("Could not connect to device during permission test:", connectError);
+        // Still return true as permission was granted even if connection failed
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error requesting Bluetooth permission:", error);
+
+      // Check if user denied permission
+      if (error instanceof Error) {
+        if (error.message.includes('User cancelled')) {
+          console.warn("User denied Bluetooth permission");
+        } else if (error.message.includes('Bluetooth adapter is not available')) {
+          console.warn("Bluetooth is not enabled on this device");
+        } else if (error.message.includes('SecurityError') || error.message.includes('secure context')) {
+          console.warn("Security error - make sure you're using HTTPS or localhost");
+        }
+      }
+
+      return false;
+    }
+  }
+
+  // Check if Bluetooth is enabled on the device
+  async checkBluetoothStatus(): Promise<{ enabled: boolean; error?: BluetoothError }> {
+    if (!this.isWebBluetoothAvailable()) {
+      return {
+        enabled: false,
+        error: this.parseBluetoothError(new Error("Web Bluetooth API is not available"))
+      };
+    }
+
+    try {
+      // Try to get available devices - this will fail if Bluetooth is disabled
+      // or if permission is not granted
+      await navigator.bluetooth.getAvailability();
+
+      // If we get here without error, Bluetooth is likely enabled
+      return { enabled: true };
+    } catch (error) {
+      console.error("Error checking Bluetooth status:", error);
+      return {
+        enabled: false,
+        error: this.parseBluetoothError(error)
+      };
+    }
   }
 
   // Check if Web Bluetooth API is available
   isWebBluetoothAvailable(): boolean {
-    return typeof navigator !== 'undefined' && 
-           navigator.bluetooth !== undefined;
+    // Basic check for Web Bluetooth API
+    const hasBluetoothAPI = typeof navigator !== 'undefined' &&
+      navigator.bluetooth !== undefined;
+
+    // Check if we're in a secure context (HTTPS or localhost)
+    const isSecureContext = window.isSecureContext;
+
+    // Additional check for mobile devices
+    const userAgent = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent);
+    const isAndroid = /Android/.test(userAgent);
+
+    // Log detailed information for debugging
+    console.log("Web Bluetooth availability check:", {
+      hasBluetoothAPI,
+      isSecureContext,
+      userAgent,
+      isIOS,
+      isSafari,
+      isAndroid,
+      protocol: window.location.protocol
+    });
+
+    // Web Bluetooth requires a secure context
+    if (!isSecureContext) {
+      console.warn("Web Bluetooth requires a secure context (HTTPS or localhost)");
+      return false;
+    }
+
+    // iOS doesn't support Web Bluetooth in any browser due to Apple restrictions
+    if (isIOS) {
+      console.warn("iOS detected - Web Bluetooth is not supported on iOS devices");
+      return false;
+    }
+
+    // Safari doesn't support Web Bluetooth
+    if (isSafari) {
+      console.warn("Safari detected - Web Bluetooth is not supported in Safari");
+      return false;
+    }
+
+    return hasBluetoothAPI;
+  }
+
+  // Get browser compatibility information
+  getBrowserCompatibilityInfo(): { compatible: boolean; message: string } {
+    const userAgent = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+    const isAndroid = /Android/.test(userAgent);
+    const isChrome = /Chrome/i.test(userAgent);
+    const isEdge = /Edg/i.test(userAgent);
+    const isOpera = /OPR/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent);
+    const isFirefox = /Firefox/i.test(userAgent);
+
+    if (isIOS) {
+      return {
+        compatible: false,
+        message: "Web Bluetooth is not supported on iOS devices (iPhone/iPad) in any browser due to Apple restrictions. Please use an Android device with Chrome or a desktop computer."
+      };
+    }
+
+    if (isAndroid) {
+      if (isChrome || isOpera) {
+        return {
+          compatible: true,
+          message: "Your browser supports Web Bluetooth. Make sure Bluetooth is enabled on your device."
+        };
+      } else {
+        return {
+          compatible: false,
+          message: "Please use Chrome or Opera on Android for Bluetooth support. Your current browser doesn't support Web Bluetooth."
+        };
+      }
+    }
+
+    if (isChrome || isEdge || isOpera) {
+      return {
+        compatible: true,
+        message: "Your browser supports Web Bluetooth. Make sure Bluetooth is enabled on your device."
+      };
+    }
+
+    if (isSafari) {
+      return {
+        compatible: false,
+        message: "Safari doesn't support Web Bluetooth. Please use Chrome or Edge instead."
+      };
+    }
+
+    if (isFirefox) {
+      return {
+        compatible: false,
+        message: "Firefox doesn't support Web Bluetooth. Please use Chrome, Edge, or Opera instead."
+      };
+    }
+
+    return {
+      compatible: false,
+      message: "Your browser doesn't appear to support Web Bluetooth. Please use Chrome, Edge, or Opera on a compatible device."
+    };
   }
 
   // Get available Bluetooth devices
@@ -160,7 +384,7 @@ class BluetoothService {
           { namePrefix: 'BT' }, // Common prefix for Bluetooth modules
         ],
         optionalServices: [
-          'generic_access', 
+          'generic_access',
           '0000ffe0-0000-1000-8000-00805f9b34fb',
           '0000ffe1-0000-1000-8000-00805f9b34fb'
         ]
@@ -172,10 +396,10 @@ class BluetoothService {
           name: device.name || "Unknown Device",
           device: device
         };
-        
+
         // Store the device for later use during connect
         this.scannedDevices = [bluetoothDevice];
-        
+
         return [bluetoothDevice];
       }
       return [];
@@ -200,7 +424,7 @@ class BluetoothService {
       }
 
       console.log(`Connecting to device: ${deviceId}`);
-      
+
       // Connect to the GATT server
       const server = await matchingDevice.device.gatt?.connect();
       if (!server) {
@@ -225,7 +449,7 @@ class BluetoothService {
           throw new Error("No compatible Bluetooth service found on this device");
         }
       }
-      
+
       // Get the characteristic for serial communication
       let characteristic;
       try {
@@ -234,10 +458,10 @@ class BluetoothService {
         console.error("Could not find characteristic:", error);
         throw new Error("Bluetooth characteristic not found");
       }
-      
+
       // Store the characteristic for later use
       this.characteristic = characteristic;
-      
+
       // Set up notifications for incoming data
       try {
         await characteristic.startNotifications();
@@ -248,7 +472,7 @@ class BluetoothService {
             const decoder = new TextDecoder('utf-8');
             const data = decoder.decode(target.value);
             this.notifyDataListeners(data);
-            
+
             // If we have an active shared session, send to the support view via database
             if (this.sharedSession) {
               this.saveReceivedDataToDb(data);
@@ -262,7 +486,7 @@ class BluetoothService {
 
       // Store the connected device
       this.connectedDevice = matchingDevice;
-      
+
       console.log(`Successfully connected to ${this.connectedDevice.name}`);
     } catch (error) {
       this.isConnectionActive = false;
@@ -271,11 +495,11 @@ class BluetoothService {
       throw this.parseBluetoothError(error);
     }
   }
-  
+
   // Save device data to the database for support view
   private async saveReceivedDataToDb(data: string): Promise<void> {
     if (!this.sharedSession) return;
-    
+
     try {
       const { error } = await supabase
         .from('session_commands')
@@ -286,7 +510,7 @@ class BluetoothService {
             sender: 'device' // Indicate this came from the device
           }
         ]);
-        
+
       if (error) {
         console.error("Error saving device data to database:", error);
       }
@@ -300,7 +524,7 @@ class BluetoothService {
     if (!this.isConnectionActive || !this.connectedDevice?.device?.gatt) {
       return false;
     }
-    
+
     try {
       // Test if the device is still connected
       const connected = this.connectedDevice.device.gatt.connected;
@@ -309,14 +533,14 @@ class BluetoothService {
         this.characteristic = null;
         return false;
       }
-      
+
       // Verify characteristic is still valid
       if (!this.characteristic) {
         console.warn("Characteristic is null but device is connected");
         this.isConnectionActive = false;
         return false;
       }
-      
+
       return true;
     } catch (error) {
       console.error("Error verifying connection:", error);
@@ -329,7 +553,7 @@ class BluetoothService {
   // Disconnect from the device
   disconnect(): void {
     console.log("Attempting to disconnect from device");
-    
+
     // First, clean up the characteristic
     if (this.characteristic) {
       try {
@@ -346,7 +570,7 @@ class BluetoothService {
       }
       this.characteristic = null;
     }
-    
+
     // Then disconnect from the device if still connected
     if (this.connectedDevice?.device?.gatt?.connected) {
       try {
@@ -355,7 +579,7 @@ class BluetoothService {
         console.warn("Error disconnecting from GATT server:", error);
       }
     }
-    
+
     // Always reset the connection state
     this.isConnectionActive = false;
     this.connectedDevice = null;
@@ -363,9 +587,9 @@ class BluetoothService {
   }
 
   isConnected(): boolean {
-    return this.isConnectionActive && 
-           !!this.connectedDevice?.device?.gatt?.connected && 
-           !!this.characteristic;
+    return this.isConnectionActive &&
+      !!this.connectedDevice?.device?.gatt?.connected &&
+      !!this.characteristic;
   }
 
   getConnectedDevice(): BluetoothDevice | null {
@@ -376,7 +600,7 @@ class BluetoothService {
   async sendCommand(command: string): Promise<void> {
     // Verify connection is still active before sending
     const isConnected = await this.verifyConnection();
-    
+
     if (!isConnected || !this.characteristic) {
       throw this.parseBluetoothError(new Error("No device connected or characteristic not available"));
     }
@@ -386,7 +610,7 @@ class BluetoothService {
       const data = encoder.encode(command + '\r\n'); // Add carriage return and line feed for AT commands
       await this.characteristic.writeValue(data);
       console.log(`Command sent: ${command}`);
-      
+
       // If we have an active shared session, log this command to the database
       if (this.sharedSession) {
         await this.saveCommandToDb(command, 'user');
@@ -404,7 +628,7 @@ class BluetoothService {
 
   private async saveCommandToDb(command: string, sender: 'user' | 'support'): Promise<void> {
     if (!this.sharedSession) return;
-    
+
     try {
       console.log(`Saving command to DB: ${command} from ${sender}`);
       const { error } = await supabase
@@ -416,7 +640,7 @@ class BluetoothService {
             sender: sender
           }
         ]);
-        
+
       if (error) {
         console.error("Error saving command to database:", error);
       }
@@ -436,43 +660,29 @@ class BluetoothService {
   private notifyDataListeners(data: string): void {
     this.dataListeners.forEach(listener => listener(data));
   }
-  
-  shareDeviceSession(sessionName: string): ShareSession {
+
+  shareDeviceSession(sessionName: string, sessionId: string): ShareSession {
     if (!this.connectedDevice) {
       throw new Error("No device connected");
     }
-    
-    const sessionId = Math.random().toString(36).substring(2, 10);
-    
+
+    // Use the session ID that was already created in UserDeviceView
     // Create the session object
     const session: ShareSession = {
       id: sessionId,
       name: sessionName
     };
-    
+
     this.sharedSession = session;
-    
-    // Add the session to SessionService to make it visible in the support view
-    sessionService.createSession(
-      sessionName,
-      "Remote User", // We could make this configurable
-      this.connectedDevice.name || "Unknown Device"
-    ).then(newSession => {
-      this.sharedSession = {
-        id: newSession.id,
-        name: newSession.name
-      };
-      console.log(`Device session shared with DB ID: ${newSession.id}`);
-    });
-    
+
     console.log(`Device session shared: ${sessionId} - ${sessionName}`);
-    
+
     // Explicitly fetch and log sessions to debug - fix Promise handling
     sessionService.getAllSessions().then(sessions => {
       console.log(`After sharing, session count: ${sessions.length}`);
       sessionService.debugDumpSessions();
     });
-    
+
     return session;
   }
 
@@ -482,9 +692,9 @@ class BluetoothService {
       const sessionId = this.sharedSession.id;
       sessionService.closeSession(sessionId);
       console.log(`Session sharing stopped, session closed: ${sessionId}`);
-      
+
       this.sharedSession = null;
-      
+
       // Verify sessions after closing - fix Promise handling
       sessionService.getAllSessions().then(sessions => {
         console.log(`After stopping sharing, remaining sessions: ${sessions.length}`);
@@ -504,11 +714,11 @@ class BluetoothService {
   getSerialConfig(): SerialConfig {
     return this.serialConfig;
   }
-  
+
   // Method for support to send commands to the user's device
   async receiveSupportCommand(command: string): Promise<void> {
     console.log(`Support command received: ${command}`);
-    
+
     // Check if a device is connected to execute the command
     if (this.isConnected()) {
       try {

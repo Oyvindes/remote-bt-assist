@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle } from "lucide-react";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield } from "lucide-react";
 import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig, BluetoothError } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -45,6 +45,8 @@ export const UserDeviceView = () => {
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
   const [bluetoothError, setBluetoothError] = useState<BluetoothError | null>(null);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string>("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -68,7 +70,7 @@ export const UserDeviceView = () => {
 
   useEffect(() => {
     let connectionCheckInterval: NodeJS.Timeout;
-    
+
     if (isConnected) {
       connectionCheckInterval = setInterval(async () => {
         const stillConnected = await bluetoothService.verifyConnection();
@@ -82,7 +84,7 @@ export const UserDeviceView = () => {
         }
       }, 5000);
     }
-    
+
     return () => {
       if (connectionCheckInterval) {
         clearInterval(connectionCheckInterval);
@@ -107,7 +109,7 @@ export const UserDeviceView = () => {
       bluetoothService.removeDataListener(handleSerialData);
     };
   }, []);
-  
+
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollArea = scrollAreaRef.current;
@@ -127,7 +129,7 @@ export const UserDeviceView = () => {
         }, async (payload) => {
           console.log("Received support command:", payload);
           const newCommand = payload.new as any;
-          
+
           try {
             await bluetoothService.sendCommand(newCommand.command);
             setSerialOutput(prev => [...prev, `> [Support] ${newCommand.command}`]);
@@ -139,7 +141,7 @@ export const UserDeviceView = () => {
         .subscribe((status) => {
           console.log(`Subscription status for support commands: ${status}`);
         });
-        
+
       return () => {
         console.log("Cleaning up support command subscription");
         supabase.removeChannel(channel);
@@ -151,15 +153,15 @@ export const UserDeviceView = () => {
     try {
       setIsScanning(true);
       setBluetoothError(null);
-      
+
       toast({
         title: "Scanning for devices...",
         description: "Please wait while we search for nearby Bluetooth devices",
       });
-      
+
       const devices = await bluetoothService.scanForDevices();
       setAvailableDevices(devices);
-      
+
       toast({
         title: "Scan Complete",
         description: `Found ${devices.length} Bluetooth devices`,
@@ -174,7 +176,7 @@ export const UserDeviceView = () => {
           message: 'Failed to scan for devices',
         });
       }
-      
+
       toast({
         title: "Scan Failed",
         description: "Could not scan for Bluetooth devices",
@@ -189,16 +191,16 @@ export const UserDeviceView = () => {
     try {
       setSerialOutput([]);
       setBluetoothError(null);
-      
+
       toast({
         title: "Connecting to device...",
         description: "Please wait while we establish a connection",
       });
-      
+
       await bluetoothService.connectToDevice(deviceId);
       setIsConnected(true);
       setDevice(bluetoothService.getConnectedDevice());
-      
+
       toast({
         title: "Connected!",
         description: "Successfully connected to your Bluetooth device",
@@ -213,7 +215,7 @@ export const UserDeviceView = () => {
           message: 'Failed to connect to device',
         });
       }
-      
+
       toast({
         title: "Connection Failed",
         description: "Could not connect to Bluetooth device",
@@ -242,22 +244,23 @@ export const UserDeviceView = () => {
   const onShareSessionSubmit = async (values: z.infer<typeof sessionFormSchema>) => {
     try {
       const deviceIdentifier = device ? device.name : "Unknown Device";
-      
+      const userName = values.sessionName; // Use the session name as the user name for consistency
+
       const session = await sessionService.createSession(
         values.sessionName,
-        "User",
+        userName,
         deviceIdentifier
       );
-      
-      const bluetoothSession = bluetoothService.shareDeviceSession(values.sessionName);
-      
+
+      const bluetoothSession = bluetoothService.shareDeviceSession(values.sessionName, session.id);
+
       setActiveSession({
         id: session.id,
         name: session.name
       });
       setIsSharingSession(true);
       setIsSessionDialogOpen(false);
-      
+
       toast({
         title: "Session Shared",
         description: `Session ID: ${session.id}. A support agent can now connect to your device.`,
@@ -276,11 +279,11 @@ export const UserDeviceView = () => {
     if (activeSession) {
       try {
         await sessionService.closeSession(activeSession.id);
-        
+
         bluetoothService.stopSharingSession();
         setIsSharingSession(false);
         setActiveSession(null);
-        
+
         toast({
           title: "Session Ended",
           description: "Remote sharing has been stopped",
@@ -298,37 +301,37 @@ export const UserDeviceView = () => {
 
   const sendCommand = async () => {
     if (command.trim() === "") return;
-    
+
     setSerialOutput(prev => [...prev, `> ${command}`]);
     setIsSending(true);
-    
+
     try {
       const connected = await bluetoothService.verifyConnection();
       if (!connected) {
         setIsConnected(false);
         throw new Error("Device is no longer connected");
       }
-      
+
       await bluetoothService.sendCommand(command);
-      
+
       toast({
         title: "Command Sent",
         description: "Command was sent to the device",
       });
     } catch (error) {
       console.error("Command error:", error);
-      
+
       if ('type' in error && (error as BluetoothError).type === 'device-disconnected') {
         setIsConnected(false);
       }
-      
+
       let errorMessage = "Could not send command to the device";
       if ('type' in error) {
         const btError = error as BluetoothError;
         errorMessage = btError.message;
         setBluetoothError(btError);
       }
-      
+
       toast({
         title: "Command Failed",
         description: errorMessage,
@@ -355,10 +358,10 @@ export const UserDeviceView = () => {
         parity: values.parity,
         flowControl: values.flowControl
       };
-      
+
       bluetoothService.setSerialConfig(serialConfig);
       setIsSerialConfigDialogOpen(false);
-      
+
       toast({
         title: "Serial Configuration Updated",
         description: `Baud: ${values.baudRate}, Data bits: ${values.dataBits}, Stop bits: ${values.stopBits}`,
@@ -401,29 +404,141 @@ export const UserDeviceView = () => {
 
   const reconnectDevice = async () => {
     if (!device) return;
-    
+
     try {
       toast({
         title: "Reconnecting...",
         description: "Attempting to reconnect to the device",
       });
-      
+
       await bluetoothService.connectToDevice(device.id);
       setIsConnected(true);
       setBluetoothError(null);
-      
+
       toast({
         title: "Reconnected!",
         description: "Successfully reconnected to your Bluetooth device",
       });
     } catch (error) {
       console.error("Reconnection error:", error);
-      
+
       toast({
         title: "Reconnection Failed",
         description: "Could not reconnect to the device",
         variant: "destructive",
       });
+    }
+  };
+
+  const requestBluetoothPermission = async () => {
+    // Set a flag to prevent multiple requests
+    setIsRequestingPermission(true);
+
+    // Set a timeout to reset the UI if something goes wrong
+    const safetyTimeout = setTimeout(() => {
+      setIsRequestingPermission(false);
+      setDebugInfo(prev => prev + "\n\nSafety timeout triggered - UI reset to prevent freezing");
+    }, 10000);
+
+    try {
+      setBluetoothError(null);
+
+      // Clear previous debug info
+      setDebugInfo("");
+
+      // Collect basic device info
+      const deviceInfo = {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        vendor: navigator.vendor,
+        language: navigator.language,
+        isSecureContext: window.isSecureContext,
+        protocol: window.location.protocol,
+        host: window.location.host
+      };
+
+      // Display device info in UI
+      setDebugInfo(`Device Info: ${JSON.stringify(deviceInfo, null, 2)}`);
+
+      toast({
+        title: "Requesting Bluetooth Permission",
+        description: "Please allow Bluetooth access when prompted by your browser",
+      });
+
+      // Add event listener to capture console logs
+      const originalConsoleLog = console.log;
+      const originalConsoleError = console.error;
+      const originalConsoleWarn = console.warn;
+
+      const logMessages: string[] = [];
+
+      console.log = (...args) => {
+        originalConsoleLog(...args);
+        logMessages.push(`LOG: ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')}`);
+        setDebugInfo(prev => `${prev}\n\n${logMessages.join('\n')}`);
+      };
+
+      console.error = (...args) => {
+        originalConsoleError(...args);
+        logMessages.push(`ERROR: ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')}`);
+        setDebugInfo(prev => `${prev}\n\n${logMessages.join('\n')}`);
+      };
+
+      console.warn = (...args) => {
+        originalConsoleWarn(...args);
+        logMessages.push(`WARN: ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')}`);
+        setDebugInfo(prev => `${prev}\n\n${logMessages.join('\n')}`);
+      };
+
+      // Request permission
+      const permissionGranted = await bluetoothService.requestBluetoothPermission();
+
+      // Restore console functions
+      console.log = originalConsoleLog;
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+
+      if (permissionGranted) {
+        toast({
+          title: "Permission Granted",
+          description: "Bluetooth permission has been granted. You can now scan for devices.",
+        });
+      } else {
+        toast({
+          title: "Permission Denied",
+          description: "Bluetooth permission was denied. Please try again and allow access when prompted.",
+          variant: "destructive",
+        });
+
+        setBluetoothError({
+          type: 'permission-denied',
+          message: 'Bluetooth permission was denied',
+        });
+      }
+    } catch (error) {
+      console.error("Permission request error:", error);
+
+      if ('type' in error) {
+        setBluetoothError(error as BluetoothError);
+      } else {
+        setBluetoothError({
+          type: 'unknown',
+          message: 'Failed to request Bluetooth permission',
+        });
+      }
+
+      // Add error details to debug info
+      setDebugInfo(prev => `${prev}\n\nERROR DETAILS: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`);
+
+      toast({
+        title: "Permission Request Failed",
+        description: "Could not request Bluetooth permission",
+        variant: "destructive",
+      });
+    } finally {
+      // Clear the safety timeout
+      clearTimeout(safetyTimeout);
+      setIsRequestingPermission(false);
     }
   };
 
@@ -436,16 +551,16 @@ export const UserDeviceView = () => {
           <AlertDescription>
             <p className="mt-2">{getErrorGuidance(bluetoothError)}</p>
             <div className="flex gap-2 mt-4">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={clearError}
               >
                 Dismiss
               </Button>
               {bluetoothError.type === 'device-disconnected' && device && (
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   size="sm"
                   onClick={reconnectDevice}
                 >
@@ -456,7 +571,7 @@ export const UserDeviceView = () => {
           </AlertDescription>
         </Alert>
       )}
-      
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -478,8 +593,8 @@ export const UserDeviceView = () => {
                 <div className="flex justify-between mt-2">
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={openSerialConfigDialog}
                       className="flex items-center gap-2"
                     >
@@ -488,7 +603,7 @@ export const UserDeviceView = () => {
                     </Button>
                   </div>
                   {isSharingSession ? (
-                    <Button 
+                    <Button
                       variant="destructive"
                       onClick={stopSharingSession}
                       className="flex items-center gap-2"
@@ -497,7 +612,7 @@ export const UserDeviceView = () => {
                       Stop Sharing
                     </Button>
                   ) : (
-                    <Button 
+                    <Button
                       variant="default"
                       onClick={openShareDialog}
                       className="flex items-center gap-2"
@@ -511,8 +626,8 @@ export const UserDeviceView = () => {
             ) : (
               <div className="space-y-4">
                 <div className="flex gap-2">
-                  <Button 
-                    onClick={scanForDevices} 
+                  <Button
+                    onClick={scanForDevices}
                     className="w-full flex items-center gap-2"
                     disabled={isScanning}
                   >
@@ -529,7 +644,7 @@ export const UserDeviceView = () => {
                     )}
                   </Button>
                 </div>
-                
+
                 {availableDevices.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Available Devices</h3>
@@ -540,8 +655,8 @@ export const UserDeviceView = () => {
                             <Bluetooth className="h-4 w-4 text-primary" />
                             <span>{device.name}</span>
                           </div>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             onClick={() => connectToDevice(device.id)}
                           >
                             Connect
@@ -554,13 +669,73 @@ export const UserDeviceView = () => {
               </div>
             )
           ) : (
-            <Alert variant="destructive" className="animate-pulse">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Bluetooth Not Available</AlertTitle>
-              <AlertDescription>
-                Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera on a compatible device.
-              </AlertDescription>
-            </Alert>
+            <div className="space-y-4">
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Bluetooth Not Available</AlertTitle>
+                <AlertDescription>
+                  {(() => {
+                    const compatibility = bluetoothService.getBrowserCompatibilityInfo();
+                    return (
+                      <div>
+                        <p>{compatibility.message}</p>
+                        {compatibility.message.includes("iOS") && (
+                          <p className="mt-2 font-semibold">
+                            iOS devices (iPhone/iPad) do not support Web Bluetooth in any browser due to Apple restrictions.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </AlertDescription>
+              </Alert>
+
+              {/* Always show permission button regardless of compatibility detection */}
+              {(
+                <div className="flex flex-col items-center gap-3 p-4 border rounded-md bg-blue-50">
+                  <p className="text-center text-blue-800 font-medium">
+                    Try requesting Bluetooth permission directly:
+                  </p>
+                  <Button
+                    onClick={requestBluetoothPermission}
+                    disabled={isRequestingPermission}
+                    className="flex items-center gap-2"
+                  >
+                    {isRequestingPermission ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Requesting Permission...
+                      </>
+                    ) : (
+                      <>
+                        <Shield className="h-4 w-4" />
+                        Request Bluetooth Permission
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-center text-blue-600">
+                    Note: Make sure Bluetooth is enabled on your device and your browser has permission to access it.
+                  </p>
+                </div>
+              )}
+
+              {/* Debug Information Display */}
+              <div className="border border-yellow-300 bg-yellow-50 p-3 rounded-md">
+                <details>
+                  <summary className="font-medium text-yellow-800 cursor-pointer">
+                    Debug Information (Click to expand)
+                  </summary>
+                  <div className="mt-2">
+                    <p className="text-xs text-yellow-800 mb-2">
+                      This information can help diagnose Bluetooth issues:
+                    </p>
+                    <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-[200px]">
+                      {debugInfo || "No debug information available yet. Click 'Request Bluetooth Permission' to generate debug info."}
+                    </pre>
+                  </div>
+                </details>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -574,7 +749,7 @@ export const UserDeviceView = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea 
+            <ScrollArea
               className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm"
               ref={scrollAreaRef}
             >
@@ -610,8 +785,8 @@ export const UserDeviceView = () => {
                 onKeyDown={(e) => e.key === "Enter" && sendCommand()}
                 disabled={isSending}
               />
-              <Button 
-                onClick={sendCommand} 
+              <Button
+                onClick={sendCommand}
                 disabled={isSending || !command.trim()}
               >
                 {isSending ? (
@@ -641,7 +816,7 @@ export const UserDeviceView = () => {
               Name your session so support can easily identify your device
             </DialogDescription>
           </DialogHeader>
-          
+
           <Form {...sessionForm}>
             <form onSubmit={sessionForm.handleSubmit(onShareSessionSubmit)} className="space-y-4">
               <FormField
@@ -660,7 +835,7 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsSessionDialogOpen(false)}>
                   Cancel
@@ -680,7 +855,7 @@ export const UserDeviceView = () => {
               Configure the serial communication parameters
             </DialogDescription>
           </DialogHeader>
-          
+
           <Form {...serialConfigForm}>
             <form onSubmit={serialConfigForm.handleSubmit(onSerialConfigSubmit)} className="space-y-4">
               <FormField
@@ -689,7 +864,7 @@ export const UserDeviceView = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Baud Rate</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={(value) => field.onChange(parseInt(value))}
                       defaultValue={field.value.toString()}
                     >
@@ -716,14 +891,14 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={serialConfigForm.control}
                 name="dataBits"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Data Bits</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={(value) => field.onChange(parseInt(value))}
                       defaultValue={field.value.toString()}
                     >
@@ -745,14 +920,14 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={serialConfigForm.control}
                 name="stopBits"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Stop Bits</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={(value) => field.onChange(parseInt(value))}
                       defaultValue={field.value.toString()}
                     >
@@ -773,14 +948,14 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={serialConfigForm.control}
                 name="parity"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Parity</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
                     >
@@ -802,14 +977,14 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={serialConfigForm.control}
                 name="flowControl"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Flow Control</FormLabel>
-                    <Select 
+                    <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
                     >
@@ -830,7 +1005,7 @@ export const UserDeviceView = () => {
                   </FormItem>
                 )}
               />
-              
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsSerialConfigDialogOpen(false)}>
                   Cancel

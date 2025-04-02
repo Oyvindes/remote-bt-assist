@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Send, UserCircle, Users, RefreshCw, Loader2 } from "lucide-react";
+import { Send, UserCircle, Users, RefreshCw, Loader2, Trash2 } from "lucide-react";
 import sessionService, { Session } from "@/services/SessionService";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -30,12 +30,12 @@ export const SupportView = () => {
   // Subscribe to session updates
   useEffect(() => {
     console.log("SupportView: Setting up session listener");
-    
+
     const handleSessionsUpdate = (sessions: Session[]) => {
       console.log("SupportView: Received sessions update:", sessions);
       setActiveSessions(sessions);
       setIsLoading(false);
-      
+
       // Check if our connected session is still active
       if (connectedSession && !sessions.some(s => s.id === connectedSession)) {
         toast({
@@ -50,7 +50,7 @@ export const SupportView = () => {
 
     // Register listener with SessionService
     sessionService.addSessionsListener(handleSessionsUpdate);
-    
+
     // Force a refresh from database
     const fetchSessions = async () => {
       try {
@@ -61,7 +61,7 @@ export const SupportView = () => {
       }
     };
     fetchSessions();
-    
+
     return () => {
       console.log("SupportView: Removing session listener");
       sessionService.removeSessionsListener(handleSessionsUpdate);
@@ -79,18 +79,18 @@ export const SupportView = () => {
             .select('*')
             .eq('session_id', connectedSession)
             .order('timestamp', { ascending: true });
-            
+
           if (error) {
             console.error("Error fetching commands:", error);
             return;
           }
-          
+
           console.log("Fetched commands:", data);
-          
+
           if (data && data.length > 0) {
-            const commandOutput = data.map(cmd => 
-              cmd.sender === 'support' 
-                ? `Support sent: ${cmd.command}` 
+            const commandOutput = data.map(cmd =>
+              cmd.sender === 'support'
+                ? `Support sent: ${cmd.command}`
                 : cmd.sender === 'user'
                   ? `User sent: ${cmd.command}`
                   : `Device response: ${cmd.command}`
@@ -101,9 +101,9 @@ export const SupportView = () => {
           console.error("Error in fetchCommands:", error);
         }
       };
-      
+
       fetchCommands();
-      
+
       // Subscribe to real-time updates for new commands
       const channel = supabase
         .channel('session-commands')
@@ -116,7 +116,7 @@ export const SupportView = () => {
           console.log("Real-time command update received:", payload);
           const newCommand = payload.new as any;
           let formattedCommand = '';
-          
+
           if (newCommand.sender === 'support') {
             formattedCommand = `Support sent: ${newCommand.command}`;
           } else if (newCommand.sender === 'user') {
@@ -124,13 +124,13 @@ export const SupportView = () => {
           } else if (newCommand.sender === 'device') {
             formattedCommand = `Device response: ${newCommand.command}`;
           }
-            
+
           setSerialOutput(prev => [...prev, formattedCommand]);
         })
         .subscribe((status) => {
           console.log(`Subscription status for session commands: ${status}`);
         });
-        
+
       return () => {
         console.log("Cleaning up subscription");
         supabase.removeChannel(channel);
@@ -141,14 +141,14 @@ export const SupportView = () => {
   const refreshSessions = async () => {
     setIsRefreshing(true);
     console.log("SupportView: Manually refreshing sessions");
-    
+
     try {
       // Force a refresh from database
       await sessionService.forceRefreshFromDb();
-      
+
       // Dump current sessions to console for debugging
       sessionService.debugDumpSessions();
-      
+
       toast({
         title: "Refreshed Sessions",
         description: `Found ${activeSessions.length} active sessions`,
@@ -165,6 +165,47 @@ export const SupportView = () => {
     }
   };
 
+  const deleteSession = async (sessionId: string) => {
+    try {
+      const session = await sessionService.getSession(sessionId);
+      if (!session) {
+        toast({
+          title: "Session not found",
+          description: "The selected session is no longer available",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Confirm deletion
+      if (!window.confirm(`Are you sure you want to delete the session for ${session.user}?`)) {
+        return;
+      }
+
+      const success = await sessionService.closeSession(sessionId);
+
+      if (success) {
+        toast({
+          title: "Session Deleted",
+          description: `Session for ${session.user} has been deleted`,
+        });
+      } else {
+        toast({
+          title: "Deletion Failed",
+          description: "Could not delete the session. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting session:", error);
+      toast({
+        title: "Deletion Failed",
+        description: "Could not delete the session",
+        variant: "destructive",
+      });
+    }
+  };
+
   const connectToSession = async (sessionId: string) => {
     try {
       const session = await sessionService.getSession(sessionId);
@@ -178,10 +219,10 @@ export const SupportView = () => {
       }
 
       setConnectedSession(sessionId);
-      
+
       // Initialize empty serial output (will be populated from useEffect)
       setSerialOutput([]);
-      
+
       toast({
         title: "Connected to Session",
         description: `You are now connected to ${session.name}`,
@@ -200,7 +241,7 @@ export const SupportView = () => {
     if (connectedSession) {
       setConnectedSession(null);
       setSerialOutput([]);
-      
+
       toast({
         title: "Disconnected",
         description: "You have disconnected from the session",
@@ -210,7 +251,7 @@ export const SupportView = () => {
 
   const sendCommand = async () => {
     if (command.trim() === "" || !connectedSession) return;
-    
+
     try {
       // Add the command to the database
       const { error } = await supabase
@@ -222,7 +263,7 @@ export const SupportView = () => {
             sender: 'support'
           }
         ]);
-        
+
       if (error) {
         console.error("Error saving command:", error);
         toast({
@@ -232,10 +273,10 @@ export const SupportView = () => {
         });
         return;
       }
-      
+
       // Clear the command input
       setCommand("");
-      
+
       toast({
         title: "Command Sent",
         description: "Command was sent to the device",
@@ -260,9 +301,9 @@ export const SupportView = () => {
                 <Users className="h-5 w-5" />
                 <CardTitle>Active Support Sessions</CardTitle>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={refreshSessions}
                 disabled={isRefreshing}
                 className="flex items-center gap-2"
@@ -286,7 +327,7 @@ export const SupportView = () => {
             ) : activeSessions.length > 0 ? (
               <div className="space-y-2">
                 {activeSessions.map((session) => (
-                  <div 
+                  <div
                     key={session.id}
                     className="border rounded-md p-4 flex justify-between items-center hover:bg-slate-50 transition-colors"
                   >
@@ -299,9 +340,20 @@ export const SupportView = () => {
                         </p>
                       </div>
                     </div>
-                    <Button onClick={() => connectToSession(session.id)}>
-                      Connect
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => deleteSession(session.id)}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        title="Delete session"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button onClick={() => connectToSession(session.id)}>
+                        Connect
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -339,7 +391,7 @@ export const SupportView = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ScrollArea 
+              <ScrollArea
                 className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm"
                 ref={scrollAreaRef}
               >

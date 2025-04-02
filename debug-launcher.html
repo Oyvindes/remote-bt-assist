@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Launcher</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            margin: 10px 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        code {
+            background-color: #f1f1f1;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .note {
+            background-color: #ffffd9;
+            border-left: 4px solid #ffeb3b;
+            padding: 10px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Remote BT Assist Debug Launcher</h1>
+    
+    <div class="card">
+        <h2>Debug Configuration</h2>
+        <p>This launcher helps you start debugging sessions for your Remote BT Assist application.</p>
+        
+        <div class="note">
+            <p><strong>Note:</strong> To debug JSON with Comments files, you need to install the "JSON with Comments" extension from the VSCode Marketplace.</p>
+        </div>
+        
+        <h3>Available Debug Configurations:</h3>
+        <ol>
+            <li><strong>Full Stack: Vite + Chrome</strong> (Recommended) - Runs both the Vite server and Chrome browser together</li>
+            <li><strong>Launch Chrome against localhost</strong> - Launches Chrome browser for debugging the frontend</li>
+            <li><strong>Debug Current File</strong> - Debugs the currently active file in VSCode</li>
+            <li><strong>Debug Vite Dev Server</strong> - Starts and debugs the Vite development server</li>
+        </ol>
+    </div>
+    
+    <div class="card">
+        <h2>Quick Actions</h2>
+        <p>Click on the buttons below to start debugging:</p>
+        
+        <a href="vscode://workbench/action/debug.start?name=Full%20Stack%3A%20Vite%20%2B%20Chrome" class="button">Start Full Stack Debugging</a>
+        <a href="vscode://workbench/action/debug.start?name=Debug%20Vite%20Dev%20Server" class="button">Start Vite Server</a>
+        <a href="vscode://workbench/action/debug.start?name=Launch%20Chrome%20against%20localhost" class="button">Launch Chrome</a>
+    </div>
+    
+    <div class="card">
+        <h2>Manual Steps</h2>
+        <p>If the buttons don't work, follow these steps for full stack debugging:</p>
+        <ol>
+            <li>Open Debug panel in VSCode (Ctrl+Shift+D or Cmd+Shift+D)</li>
+            <li>Select "Full Stack: Vite + Chrome" from the dropdown at the top</li>
+            <li>Click the green play button or press F5</li>
+        </ol>
+        <p>This will start both the Vite server and Chrome browser together, providing a complete debugging experience.</p>
+    </div>
+    
+    <div class="card">
+        <h2>External Device Access</h2>
+        <p>The Vite server is configured to be accessible from other devices on your network:</p>
+        <ol>
+            <li>Start the Vite server using one of the methods above</li>
+            <li>Look for the Network URLs displayed in the terminal</li>
+            <li>Use these URLs to access your app from other devices on the same network</li>
+        </ol>
+        <div class="note">
+            <p><strong>Note:</strong> Make sure your firewall allows connections to port 8080 for external devices to connect.</p>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>Troubleshooting</h2>
+        <p>If you encounter the "You don't have an extension for debugging 'JSON with Comments'" error:</p>
+        <ol>
+            <li>Click "Find 'JSON with Comments' extension" in the dialog</li>
+            <li>Install the recommended extension</li>
+            <li>Restart VSCode</li>
+            <li>Try debugging again</li>
+        </ol>
+    </div>
+</body>
+</html>
