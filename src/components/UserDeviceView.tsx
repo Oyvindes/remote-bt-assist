@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -212,7 +211,16 @@ export const UserDeviceView = () => {
 
   const onSerialConfigSubmit = (values: z.infer<typeof serialConfigFormSchema>) => {
     try {
-      bluetoothService.setSerialConfig(values);
+      // Ensure all required fields are present by creating a complete SerialConfig object
+      const serialConfig: SerialConfig = {
+        baudRate: values.baudRate,
+        dataBits: values.dataBits,
+        stopBits: values.stopBits,
+        parity: values.parity,
+        flowControl: values.flowControl
+      };
+      
+      bluetoothService.setSerialConfig(serialConfig);
       setIsSerialConfigDialogOpen(false);
       
       toast({
