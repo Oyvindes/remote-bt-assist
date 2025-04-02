@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +82,9 @@ export const UserDeviceView = () => {
 
   const connectToDevice = async (deviceId: string) => {
     try {
+      // Clear existing serial output when connecting to a new device
+      setSerialOutput([]);
+      
       toast({
         title: "Connecting to device...",
         description: "Please wait while we establish a connection",
@@ -96,14 +98,6 @@ export const UserDeviceView = () => {
         title: "Connected!",
         description: "Successfully connected to your Bluetooth device",
       });
-      
-      // Add some initial data to the serial output
-      setSerialOutput([
-        "AT+VERSION?",
-        "VERSION: BT-SERIAL-v1.2",
-        "AT+STATUS?",
-        "STATUS: READY"
-      ]);
     } catch (error) {
       toast({
         title: "Connection Failed",

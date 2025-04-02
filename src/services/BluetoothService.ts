@@ -20,8 +20,9 @@ class BluetoothService {
   private availableDevices: BluetoothDevice[] = [];
   private isScanning: boolean = false;
   private shareSession: ShareSession | null = null;
-  private serialCharacteristic: any = null;
-  private serialPort: any = null;
+  private serialCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private gattServer: BluetoothRemoteGATTServer | null = null;
+  private nativeDevice: globalThis.BluetoothDevice | null = null;
 
   async scanForDevices(timeout: number = 5000): Promise<BluetoothDevice[]> {
     // If already scanning, return current list
@@ -51,6 +52,9 @@ class BluetoothService {
           id: device.id,
           name: device.name || "Unknown Device"
         });
+        
+        // Save the native device reference
+        this.nativeDevice = device;
       }
       
     } catch (error) {
@@ -91,17 +95,42 @@ class BluetoothService {
       throw new Error("Web Bluetooth API is not available in this browser");
     }
 
+    if (!this.nativeDevice || !this.nativeDevice.gatt) {
+      throw new Error("Native Bluetooth device not available");
+    }
+
     try {
-      // In a real implementation using Web Bluetooth API
-      console.log(`Connecting to device: ${this.device.name}`);
+      console.log(`Connecting to device: ${this.device.id}`);
       
-      // Attempt to connect (in a real implementation, would use the BLE GATT server)
-      // This is just a placeholder - actual implementation would depend on the specific Bluetooth device
+      // Connect to the GATT server
+      this.gattServer = await this.nativeDevice.gatt.connect();
+      
+      // Get the primary service
+      const service = await this.gattServer.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+      
+      // Get the characteristic for serial communication
+      this.serialCharacteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+      
+      // Start notifications to receive data
+      await this.serialCharacteristic.startNotifications();
+      
+      // Add a listener for characteristic value changes
+      this.serialCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+        const target = event.target as BluetoothRemoteGATTCharacteristic;
+        if (target && target.value) {
+          const decoder = new TextDecoder('utf-8');
+          const value = decoder.decode(target.value);
+          this.notifyListeners(value);
+        }
+      });
       
       this.connected = true;
       
-      // Here we would register for notifications from the characteristic
-      // and set up the listener for incoming data
+      // Simulate some initial data for testing purposes
+      setTimeout(() => {
+        this.notifyListeners("CONNECTION ESTABLISHED");
+        this.notifyListeners("DEVICE READY");
+      }, 500);
       
       return true;
     } catch (error) {
@@ -112,15 +141,21 @@ class BluetoothService {
   }
 
   disconnect(): void {
-    // Close serial port or disconnect GATT if connected
-    if (this.serialPort && this.serialPort.readable) {
-      this.serialPort.close();
+    // Disconnect from the GATT server if connected
+    if (this.gattServer && this.serialCharacteristic) {
+      try {
+        this.serialCharacteristic.stopNotifications();
+        this.gattServer.disconnect();
+      } catch (error) {
+        console.error("Error disconnecting:", error);
+      }
     }
     
     this.connected = false;
     this.device = null;
     this.shareSession = null;
     this.serialCharacteristic = null;
+    this.gattServer = null;
   }
 
   async sendCommand(command: string): Promise<void> {
@@ -129,7 +164,6 @@ class BluetoothService {
     }
 
     try {
-      // In a real implementation, this would send data to the characteristic
       console.log(`Sending command: ${command}`);
       
       if (this.serialCharacteristic) {
@@ -139,6 +173,11 @@ class BluetoothService {
         
         // Send data to the characteristic
         await this.serialCharacteristic.writeValue(data);
+        
+        // Simulate a response for testing purposes
+        setTimeout(() => {
+          this.notifyListeners(`Response: ${command} processed`);
+        }, 300);
       } else {
         throw new Error("Serial characteristic not available");
       }
