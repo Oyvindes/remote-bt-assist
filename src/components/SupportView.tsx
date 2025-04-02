@@ -25,6 +25,17 @@ export const SupportView = () => {
       console.log("SupportView: Received sessions update:", sessions);
       setActiveSessions(sessions);
       setIsLoading(false);
+      
+      // Check if our connected session is still active
+      if (connectedSession && !sessions.some(s => s.id === connectedSession)) {
+        toast({
+          title: "Session Ended",
+          description: "The user has ended the support session.",
+          variant: "destructive",
+        });
+        setConnectedSession(null);
+        setSerialOutput([]);
+      }
     };
 
     // Register listener with SessionService
@@ -45,7 +56,7 @@ export const SupportView = () => {
       console.log("SupportView: Removing session listener");
       sessionService.removeSessionsListener(handleSessionsUpdate);
     };
-  }, []);
+  }, [connectedSession, toast]);
 
   const refreshSessions = async () => {
     setIsRefreshing(true);
@@ -105,13 +116,22 @@ export const SupportView = () => {
     }
   };
 
-  const disconnectSession = () => {
-    setConnectedSession(null);
-    setSerialOutput([]);
-    toast({
-      title: "Disconnected",
-      description: "You have disconnected from the session",
-    });
+  const disconnectSession = async () => {
+    if (connectedSession) {
+      // Close the session in the database
+      await sessionService.closeSession(connectedSession);
+      
+      setConnectedSession(null);
+      setSerialOutput([]);
+      
+      toast({
+        title: "Disconnected",
+        description: "You have disconnected from the session",
+      });
+      
+      // Refresh the sessions list immediately
+      await sessionService.forceRefreshFromDb();
+    }
   };
 
   const sendCommand = () => {

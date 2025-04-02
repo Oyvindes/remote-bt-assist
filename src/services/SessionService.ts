@@ -1,3 +1,4 @@
+
 // This service facilitates session management for remote support
 // Uses Supabase for persistent storage to work across different networks and devices
 
@@ -90,16 +91,18 @@ class SessionService {
       
       // Convert the DB records to Session objects
       this.activeSessions.clear();
-      data.forEach(record => {
-        const session = new SessionImpl(
-          record.id,
-          record.name,
-          record.user_name,
-          record.device,
-          new Date(record.start_time)
-        );
-        this.activeSessions.set(record.id, session);
-      });
+      if (data) {
+        data.forEach(record => {
+          const session = new SessionImpl(
+            record.id,
+            record.name,
+            record.user_name,
+            record.device,
+            new Date(record.start_time)
+          );
+          this.activeSessions.set(record.id, session);
+        });
+      }
       
       console.log(`[SessionService] Loaded ${this.activeSessions.size} sessions from Supabase`);
       this.notifyListeners();
