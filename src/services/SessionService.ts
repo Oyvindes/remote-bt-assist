@@ -56,25 +56,22 @@ class SessionService {
       if (this.activeSessions.size > 0) {
         this.notifyListeners();
       }
-    }, 60000); // Update every minute
-
-    // Initialize with any mock sessions if needed
-    // Uncomment for testing
-    /*
-    this.createSession(
-      "Test Device Session", 
-      "John Doe", 
-      "HC-05 Bluetooth Module"
-    );
-    */
+    }, 30000); // Update every 30 seconds
+    
+    // Initialize with mock sessions for testing if needed
+    // this.createSession("Test Session", "John Doe", "HC-05 Bluetooth Module");
+    
+    // Log session info for debugging
+    console.log("[SessionService] Initialized");
   }
   
   createSession(name: string, user: string, device: string): Session {
+    // Generate a unique ID (more readable for debugging)
     const id = Math.random().toString(36).substring(2, 10);
     const session = new SessionImpl(id, name, user, device);
     this.activeSessions.set(id, session);
+    console.log(`[SessionService] Session created: ${id} - ${name} (total: ${this.activeSessions.size})`);
     this.notifyListeners();
-    console.log(`Session created: ${id} - ${name}`);
     return session;
   }
   
@@ -83,31 +80,49 @@ class SessionService {
   }
   
   getAllSessions(): Session[] {
-    return Array.from(this.activeSessions.values());
+    const sessions = Array.from(this.activeSessions.values());
+    console.log(`[SessionService] Getting all sessions: found ${sessions.length}`);
+    return sessions;
   }
   
   closeSession(id: string): boolean {
+    console.log(`[SessionService] Attempting to close session: ${id}`);
     const result = this.activeSessions.delete(id);
     if (result) {
-      console.log(`Session closed: ${id}`);
+      console.log(`[SessionService] Session closed: ${id} (remaining: ${this.activeSessions.size})`);
       this.notifyListeners();
+    } else {
+      console.log(`[SessionService] Failed to close session: ${id} (not found)`);
     }
     return result;
   }
   
   addSessionsListener(callback: (sessions: Session[]) => void): void {
+    console.log(`[SessionService] Adding listener (total: ${this.listeners.length + 1})`);
     this.listeners.push(callback);
     // Call immediately with current sessions
-    callback(this.getAllSessions());
+    const sessions = this.getAllSessions();
+    callback(sessions);
   }
   
   removeSessionsListener(callback: (sessions: Session[]) => void): void {
+    const initialCount = this.listeners.length;
     this.listeners = this.listeners.filter(listener => listener !== callback);
+    console.log(`[SessionService] Removed listener (${initialCount} → ${this.listeners.length})`);
   }
   
   private notifyListeners(): void {
     const sessions = this.getAllSessions();
+    console.log(`[SessionService] Notifying ${this.listeners.length} listeners with ${sessions.length} sessions`);
     this.listeners.forEach(listener => listener(sessions));
+  }
+  
+  // For debugging - dump all sessions to console
+  debugDumpSessions(): void {
+    console.log(`[SessionService] DEBUG - Active Sessions (${this.activeSessions.size}):`);
+    this.activeSessions.forEach((session, id) => {
+      console.log(`  - ID: ${id}, Name: ${session.name}, User: ${session.user}, Device: ${session.device}, Duration: ${session.getFormattedDuration()}`);
+    });
   }
 }
 

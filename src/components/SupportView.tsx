@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Send, UserCircle, Users } from "lucide-react";
+import { Send, UserCircle, Users, RefreshCw } from "lucide-react";
 import sessionService, { Session } from "@/services/SessionService";
 
 export const SupportView = () => {
@@ -13,26 +12,47 @@ export const SupportView = () => {
   const [connectedSession, setConnectedSession] = useState<string | null>(null);
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
   const [command, setCommand] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
   // Subscribe to session updates
   useEffect(() => {
+    console.log("SupportView: Setting up session listener");
+    
     const handleSessionsUpdate = (sessions: Session[]) => {
-      console.log("SupportView received sessions update:", sessions);
+      console.log("SupportView: Received sessions update:", sessions);
       setActiveSessions(sessions);
     };
 
     sessionService.addSessionsListener(handleSessionsUpdate);
 
+    // Debug: Force an immediate check for sessions
+    const currentSessions = sessionService.getAllSessions();
+    console.log("SupportView: Initial sessions check:", currentSessions);
+    
     return () => {
+      console.log("SupportView: Removing session listener");
       sessionService.removeSessionsListener(handleSessionsUpdate);
     };
   }, []);
 
-  // Log when component mounts to help with debugging
-  useEffect(() => {
-    console.log("SupportView mounted, current sessions:", sessionService.getAllSessions());
-  }, []);
+  const refreshSessions = () => {
+    setIsRefreshing(true);
+    console.log("SupportView: Manually refreshing sessions");
+    // Dump current sessions to console for debugging
+    sessionService.debugDumpSessions();
+    
+    // Force update the state with current sessions
+    const currentSessions = sessionService.getAllSessions();
+    setActiveSessions(currentSessions);
+    
+    toast({
+      title: "Refreshed Sessions",
+      description: `Found ${currentSessions.length} active sessions`,
+    });
+    
+    setTimeout(() => setIsRefreshing(false), 1000);
+  };
 
   const connectToSession = (sessionId: string) => {
     const session = sessionService.getSession(sessionId);
@@ -82,10 +102,22 @@ export const SupportView = () => {
       {!connectedSession ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Active Support Sessions
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                <CardTitle>Active Support Sessions</CardTitle>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={refreshSessions}
+                disabled={isRefreshing}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
             <CardDescription>
               Connect to an active user session to provide remote support
             </CardDescription>
