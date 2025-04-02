@@ -16,7 +16,9 @@ export const SupportView = () => {
   const [command, setCommand] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
   // Auto-scroll to bottom when new messages arrive
@@ -68,41 +70,49 @@ export const SupportView = () => {
     };
   }, [connectedSession, toast]);
 
+  // Function to refresh commands from the database
+  const refreshCommands = async () => {
+    if (!connectedSession) return;
+
+    try {
+      console.log(`Refreshing commands for session: ${connectedSession}`);
+      const { data, error } = await supabase
+        .from('session_commands')
+        .select('*')
+        .eq('session_id', connectedSession)
+        .order('timestamp', { ascending: true });
+
+      if (error) {
+        console.error("Error refreshing commands:", error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const commandOutput = data.map(cmd =>
+          cmd.sender === 'support'
+            ? `Support sent: ${cmd.command}`
+            : cmd.sender === 'user'
+              ? `User sent: ${cmd.command}`
+              : `Device response: ${cmd.command}`
+        );
+        setSerialOutput(commandOutput);
+        setLastRefreshTime(new Date());
+      }
+    } catch (error) {
+      console.error("Error in refreshCommands:", error);
+    }
+  };
+
   // Load existing commands when connecting to a session
   useEffect(() => {
     if (connectedSession) {
-      const fetchCommands = async () => {
-        try {
-          console.log(`Fetching commands for session: ${connectedSession}`);
-          const { data, error } = await supabase
-            .from('session_commands')
-            .select('*')
-            .eq('session_id', connectedSession)
-            .order('timestamp', { ascending: true });
+      // Initial fetch of commands
+      refreshCommands();
 
-          if (error) {
-            console.error("Error fetching commands:", error);
-            return;
-          }
-
-          console.log("Fetched commands:", data);
-
-          if (data && data.length > 0) {
-            const commandOutput = data.map(cmd =>
-              cmd.sender === 'support'
-                ? `Support sent: ${cmd.command}`
-                : cmd.sender === 'user'
-                  ? `User sent: ${cmd.command}`
-                  : `Device response: ${cmd.command}`
-            );
-            setSerialOutput(commandOutput);
-          }
-        } catch (error) {
-          console.error("Error in fetchCommands:", error);
-        }
-      };
-
-      fetchCommands();
+      // Set up interval to refresh commands every second
+      refreshIntervalRef.current = setInterval(() => {
+        refreshCommands();
+      }, 1000);
 
       // Subscribe to real-time updates for new commands
       const channel = supabase
@@ -132,8 +142,14 @@ export const SupportView = () => {
         });
 
       return () => {
-        console.log("Cleaning up subscription");
+        console.log("Cleaning up subscription and refresh interval");
         supabase.removeChannel(channel);
+
+        // Clear the refresh interval
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+          refreshIntervalRef.current = null;
+        }
       };
     }
   }, [connectedSession]);
@@ -253,14 +269,20 @@ export const SupportView = () => {
     if (command.trim() === "" || !connectedSession) return;
 
     try {
-      // Add the command to the database
+      // Send the command directly without any special format
+      // Log the command being sent
+      console.log(`Support sending command: ${command}`);
+
+      // Add the command to the database with a unique timestamp to ensure it's processed
+      const timestamp = new Date().toISOString();
       const { error } = await supabase
         .from('session_commands')
         .insert([
           {
             session_id: connectedSession,
             command: command,
-            sender: 'support'
+            sender: 'support',
+            timestamp: timestamp
           }
         ]);
 
@@ -385,10 +407,22 @@ export const SupportView = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Remote Serial Monitor</CardTitle>
-              <CardDescription>
-                View serial data and send commands to the user's device
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Remote Serial Monitor</CardTitle>
+                  <CardDescription>
+                    View serial data and send commands to the user's device
+                  </CardDescription>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {lastRefreshTime && (
+                    <div className="flex items-center gap-1">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      <span>Auto-refreshing every second</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea

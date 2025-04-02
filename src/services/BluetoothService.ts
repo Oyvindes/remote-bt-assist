@@ -722,7 +722,21 @@ class BluetoothService {
     // Check if a device is connected to execute the command
     if (this.isConnected()) {
       try {
-        await this.sendCommand(command);
+        // Don't use sendCommand as it might be saving to DB as 'user'
+        // Instead, directly send the command to the device
+        if (!this.characteristic) {
+          throw new Error("Bluetooth characteristic not available");
+        }
+
+        const encoder = new TextEncoder();
+        const data = encoder.encode(command + '\r\n'); // Add carriage return and line feed for AT commands
+        await this.characteristic.writeValue(data);
+        console.log(`Support command sent to device: ${command}`);
+
+        // Save the command to the database as 'support'
+        if (this.sharedSession) {
+          await this.saveCommandToDb(command, 'support');
+        }
       } catch (error) {
         console.error("Error executing support command:", error);
         throw this.parseBluetoothError(error);

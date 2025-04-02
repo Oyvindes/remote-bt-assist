@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield } from "lucide-react";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield, Terminal } from "lucide-react";
 import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig, BluetoothError } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -42,11 +42,15 @@ export const UserDeviceView = () => {
   const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  // Use a ref instead of state to track executed commands
+  const executedCommandsRef = useRef<Set<string>>(new Set());
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
   const [bluetoothError, setBluetoothError] = useState<BluetoothError | null>(null);
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>("");
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -117,8 +121,93 @@ export const UserDeviceView = () => {
     }
   }, [serialOutput]);
 
+  // Function to refresh commands from the database
+  const refreshCommands = async () => {
+    if (!activeSession) return;
+
+    try {
+      console.log(`Refreshing commands for session: ${activeSession.id}`);
+      const { data, error } = await supabase
+        .from('session_commands')
+        .select('*')
+        .eq('session_id', activeSession.id)
+        .order('timestamp', { ascending: true });
+
+      console.log("Fetched commands:", data);
+
+      if (error) {
+        console.error("Error refreshing commands:", error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Process and display commands
+        const commandOutput = data.map(cmd =>
+          cmd.sender === 'support'
+            ? `> [Support] ${cmd.command}`
+            : cmd.sender === 'user'
+              ? `> ${cmd.command}`
+              : cmd.command
+        );
+        setSerialOutput(commandOutput);
+
+        // Auto-execute any support commands that haven't been executed yet
+        // We'll use a Set to keep track of which commands have been executed
+        for (const cmd of data) {
+          // Create a unique key for this command using id
+          const commandKey = cmd.id;
+
+          console.log("Checking command:", cmd.command, "ID:", commandKey, "Already executed:", executedCommandsRef.current.has(commandKey));
+
+          // Only execute support commands that haven't been executed yet
+          if (cmd.sender === 'support' && !executedCommandsRef.current.has(commandKey)) {
+            console.log("Auto-executing support command from refresh:", cmd.command);
+            setDebugInfo(prev => `${prev}\n\nAuto-executing command from refresh: ${cmd.command} (ID: ${commandKey})`);
+
+            try {
+              // Execute the command
+              await bluetoothService.sendCommand(cmd.command);
+              console.log("Support command executed successfully from refresh");
+
+              // Add this command to the set of executed commands
+              executedCommandsRef.current.add(commandKey);
+              console.log("Added to executed commands. Set now contains:", Array.from(executedCommandsRef.current));
+
+              // Show a toast notification
+              toast({
+                title: "Support Command Auto-Executed",
+                description: `${cmd.command} sent to device (ID: ${commandKey})`,
+              });
+            } catch (error) {
+              console.error("Error auto-executing support command from refresh:", error);
+
+              // Show error toast
+              toast({
+                title: "Command Failed",
+                description: `Failed to send ${cmd.command}`,
+                variant: "destructive",
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error in refreshCommands:", error);
+    }
+  };
+
   useEffect(() => {
     if (activeSession) {
+      // Initial fetch of commands
+      refreshCommands();
+
+      // Set up interval to refresh commands every second
+      refreshIntervalRef.current = setInterval(() => {
+        refreshCommands();
+        setLastRefreshTime(new Date());
+      }, 1000);
+
+      // Also set up real-time subscription for immediate updates
       const channel = supabase
         .channel('support-commands')
         .on('postgres_changes', {
@@ -130,21 +219,160 @@ export const UserDeviceView = () => {
           console.log("Received support command:", payload);
           const newCommand = payload.new as any;
 
-          try {
-            await bluetoothService.sendCommand(newCommand.command);
-            setSerialOutput(prev => [...prev, `> [Support] ${newCommand.command}`]);
-          } catch (error) {
-            console.error("Error executing support command:", error);
-            setSerialOutput(prev => [...prev, `! Error executing support command: ${newCommand.command}`]);
+          // Log that we received a command with more details
+          console.log("Received support command:", JSON.stringify(newCommand, null, 2));
+
+          // Add to debug info for visibility
+          setDebugInfo(prev => `${prev}\n\nReceived command: ${JSON.stringify(newCommand, null, 2)}`);
+
+          // Extract the actual command from the support command
+          let commandToExecute = newCommand.command;
+
+          // Auto-execute the command immediately if it's from support
+          if (newCommand.sender === 'support' && commandToExecute) {
+            console.log("Auto-executing support command:", commandToExecute);
+            setDebugInfo(prev => `${prev}\n\nAuto-executing command: ${commandToExecute}`);
+
+            // Send the command directly to the device
+            try {
+              await bluetoothService.sendCommand(commandToExecute);
+              console.log("Support command executed successfully");
+
+              // Show a toast notification
+              toast({
+                title: "Support Command Auto-Executed",
+                description: `${commandToExecute} sent to device`,
+              });
+            } catch (error) {
+              console.error("Error auto-executing support command:", error);
+
+              // Add error to serial output
+              setSerialOutput(prev => [...prev, `! Error executing support command: ${commandToExecute}`]);
+
+              // Show error toast
+              toast({
+                title: "Command Failed",
+                description: `Failed to send ${commandToExecute}`,
+                variant: "destructive",
+              });
+            }
           }
+
+          // Auto-execute the command immediately
+          if (newCommand.sender === 'support' && commandToExecute) {
+            console.log("Auto-executing support command:", commandToExecute);
+
+            // Send the command directly to the device
+            try {
+              await bluetoothService.sendCommand(commandToExecute);
+              console.log("Support command executed successfully");
+
+              // Show a toast notification
+              toast({
+                title: "Support Command Auto-Executed",
+                description: `${commandToExecute} sent to device`,
+              });
+            } catch (error) {
+              console.error("Error auto-executing support command:", error);
+
+              // Add error to serial output
+              setSerialOutput(prev => [...prev, `! Error executing support command: ${commandToExecute}`]);
+
+              // Show error toast
+              toast({
+                title: "Command Failed",
+                description: `Failed to send ${commandToExecute}`,
+                variant: "destructive",
+              });
+            }
+          }
+
+          // Log the command for debugging
+          console.log("Command to check:", commandToExecute);
+
+          // ALWAYS execute support commands regardless of format
+          // Extract the actual command - remove any prefixes if they exist
+          if (commandToExecute) {
+            if (commandToExecute.startsWith('AUTO_EXEC::')) {
+              commandToExecute = commandToExecute.substring('AUTO_EXEC::'.length);
+            } else if (commandToExecute.startsWith('##EXEC##')) {
+              commandToExecute = commandToExecute.substring('##EXEC##'.length);
+            }
+
+            // Log that we're executing the command
+            console.log("Executing support command:", commandToExecute);
+            setDebugInfo(prev => `${prev}\n\nExecuting command: ${commandToExecute}`);
+
+            // FORCE DIRECT EXECUTION - bypass all checks
+            try {
+              // Get the characteristic directly if possible
+              if (bluetoothService.isConnected() && bluetoothService.getConnectedDevice()) {
+                const device = bluetoothService.getConnectedDevice();
+                if (device?.device?.gatt) {
+                  try {
+                    // Try the normal sendCommand first
+                    await bluetoothService.sendCommand(commandToExecute);
+                    console.log("Support command executed successfully via sendCommand");
+                  } catch (sendError) {
+                    console.error("Error with sendCommand, trying direct method:", sendError);
+
+                    // If that fails, try direct method
+                    const server = await device.device.gatt.connect();
+                    const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+                    const characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(commandToExecute + '\r\n');
+                    await characteristic.writeValue(data);
+                    console.log("Support command executed successfully via direct method");
+                  }
+
+                  // Show a toast notification
+                  toast({
+                    title: "Support Command Executed",
+                    description: `${commandToExecute} sent to device`,
+                  });
+                } else {
+                  throw new Error("Device GATT not available");
+                }
+              } else {
+                throw new Error("Device not connected");
+              }
+            } catch (error) {
+              console.error("Error executing support command:", error);
+              setDebugInfo(prev => `${prev}\n\nError executing command: ${commandToExecute}\n${JSON.stringify(error, null, 2)}`);
+
+              // Add error to serial output
+              setSerialOutput(prev => [...prev, `! Error executing support command: ${commandToExecute}`]);
+
+              // Show error toast
+              toast({
+                title: "Command Failed",
+                description: `Failed to send ${commandToExecute}`,
+                variant: "destructive",
+              });
+            }
+          } else {
+            // If it's not an auto-execute command, just log it
+            console.log("Received non-auto-execute command:", commandToExecute);
+          }
+
+          // Force a refresh to show the new command and response
+          refreshCommands();
         })
         .subscribe((status) => {
           console.log(`Subscription status for support commands: ${status}`);
         });
 
       return () => {
-        console.log("Cleaning up support command subscription");
+        console.log("Cleaning up support command subscription and refresh interval");
         supabase.removeChannel(channel);
+
+        // Clear the refresh interval
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+          refreshIntervalRef.current = null;
+        }
       };
     }
   }, [activeSession]);
@@ -601,6 +829,32 @@ export const UserDeviceView = () => {
                       <Settings className="h-4 w-4" />
                       Serial Config
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        // Test sending a command directly
+                        bluetoothService.sendCommand("AT+CFG")
+                          .then(() => {
+                            console.log("Test command sent successfully");
+                            toast({
+                              title: "Test Command Sent",
+                              description: "AT+CFG command sent to device",
+                            });
+                          })
+                          .catch(error => {
+                            console.error("Error sending test command:", error);
+                            toast({
+                              title: "Test Command Failed",
+                              description: "Failed to send AT+CFG command",
+                              variant: "destructive",
+                            });
+                          });
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <Terminal className="h-4 w-4" />
+                      Test Command
+                    </Button>
                   </div>
                   {isSharingSession ? (
                     <Button
@@ -743,7 +997,17 @@ export const UserDeviceView = () => {
       {isConnected && (
         <Card>
           <CardHeader>
-            <CardTitle>Serial Monitor</CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle>Serial Monitor</CardTitle>
+              <div className="text-xs text-muted-foreground">
+                {lastRefreshTime && (
+                  <div className="flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    <span>Auto-refreshing every second</span>
+                  </div>
+                )}
+              </div>
+            </div>
             <CardDescription>
               View serial data and send commands to your device
             </CardDescription>
@@ -758,7 +1022,39 @@ export const UserDeviceView = () => {
                   <div key={index} className="py-1">
                     {line.startsWith(">") ? (
                       line.includes("[Support]") ? (
-                        <span className="text-blue-400">{line}</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-blue-400">{line}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 py-0 text-xs bg-blue-900 hover:bg-blue-800 border-blue-700"
+                            onClick={() => {
+                              // Extract the command from the line
+                              const commandText = line.substring(line.indexOf("]") + 2);
+                              console.log("Executing support command via button:", commandText);
+
+                              // Send the command directly to the device
+                              bluetoothService.sendCommand(commandText)
+                                .then(() => {
+                                  console.log("Support command executed successfully");
+                                  toast({
+                                    title: "Command Executed",
+                                    description: `${commandText} sent to device`,
+                                  });
+                                })
+                                .catch(error => {
+                                  console.error("Error executing support command:", error);
+                                  toast({
+                                    title: "Command Failed",
+                                    description: `Failed to send ${commandText}`,
+                                    variant: "destructive",
+                                  });
+                                });
+                            }}
+                          >
+                            Execute
+                          </Button>
+                        </div>
                       ) : (
                         <span className="text-yellow-400">{line}</span>
                       )
@@ -797,16 +1093,18 @@ export const UserDeviceView = () => {
               </Button>
             </div>
           </CardFooter>
-        </Card>
+        </Card >
       )}
 
-      {isSharingSession && activeSession && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
-          <p className="font-medium">Session "{activeSession.name}" is currently being shared with support</p>
-          <p className="text-sm mt-1">Session ID: {activeSession.id}</p>
-          <p className="text-sm mt-1">All serial data is visible to the support agent</p>
-        </div>
-      )}
+      {
+        isSharingSession && activeSession && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
+            <p className="font-medium">Session "{activeSession.name}" is currently being shared with support</p>
+            <p className="text-sm mt-1">Session ID: {activeSession.id}</p>
+            <p className="text-sm mt-1">All serial data is visible to the support agent</p>
+          </div>
+        )
+      }
 
       <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
@@ -1016,6 +1314,6 @@ export const UserDeviceView = () => {
           </Form>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 };
