@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,7 +150,7 @@ export const UserDeviceView = () => {
 
   const openShareDialog = () => {
     // Set a default session name based on the connected device
-    form.setValue("sessionName", device ? `${device.name} Session` : "My Session");
+    sessionForm.setValue("sessionName", device ? `${device.name} Session` : "My Session");
     setIsSessionDialogOpen(true);
   };
 
@@ -381,10 +382,10 @@ export const UserDeviceView = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onShareSessionSubmit)} className="space-y-4">
+          <Form {...sessionForm}>
+            <form onSubmit={sessionForm.handleSubmit(onShareSessionSubmit)} className="space-y-4">
               <FormField
-                control={form.control}
+                control={sessionForm.control}
                 name="sessionName"
                 render={({ field }) => (
                   <FormItem>
