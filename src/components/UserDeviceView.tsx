@@ -15,7 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import sessionService from "@/services/SessionService";
 
-// Form schema for session naming
 const sessionFormSchema = z.object({
   sessionName: z.string().min(3, {
     message: "Session name must be at least 3 characters.",
@@ -24,7 +23,6 @@ const sessionFormSchema = z.object({
   }),
 });
 
-// Form schema for serial configuration
 const serialConfigFormSchema = z.object({
   baudRate: z.coerce.number().positive(),
   dataBits: z.coerce.number().int().min(5).max(9),
@@ -210,7 +208,7 @@ export const UserDeviceView = () => {
         deviceIdentifier
       );
       
-      const bluetoothSession = bluetoothService.shareDeviceSession(session.name, session.id);
+      const bluetoothSession = bluetoothService.shareDeviceSession(session.name);
       
       setActiveSession(bluetoothSession);
       setIsSharingSession(true);
