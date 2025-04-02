@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserDeviceView } from "@/components/UserDeviceView";
@@ -8,6 +8,12 @@ import { Bluetooth } from "lucide-react";
 
 const Index = () => {
   const [currentTab, setCurrentTab] = useState<string>("user");
+
+  // Ensure session state is updated when switching tabs
+  const handleTabChange = (value: string) => {
+    setCurrentTab(value);
+    console.log(`Switched to ${value} tab`);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -21,7 +27,12 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="flex-1 container mx-auto p-4 md:p-6">
-        <Tabs defaultValue="user" value={currentTab} onValueChange={setCurrentTab} className="w-full">
+        <Tabs 
+          defaultValue="user" 
+          value={currentTab} 
+          onValueChange={handleTabChange} 
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-2 mb-8">
             <TabsTrigger value="user">Device (User)</TabsTrigger>
             <TabsTrigger value="support">Support (Helper)</TabsTrigger>

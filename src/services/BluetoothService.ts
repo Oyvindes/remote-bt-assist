@@ -1,4 +1,3 @@
-
 import sessionService from './SessionService';
 
 export interface BluetoothDevice {
@@ -369,30 +368,45 @@ class BluetoothService {
       throw new Error("No device connected");
     }
     
+    const sessionId = Math.random().toString(36).substring(2, 10);
+    
+    // Create the session object
     const session: ShareSession = {
-      id: Math.random().toString(36).substring(2, 10),
+      id: sessionId,
       name: sessionName
     };
     
     this.sharedSession = session;
     
-    // Add the session to SessionService so it appears in the support view
-    sessionService.createSession(
+    // Add the session to SessionService to make it visible in the support view
+    const createdSession = sessionService.createSession(
       sessionName,
       "Remote User", // We could make this configurable
       this.connectedDevice.name || "Unknown Device"
     );
     
-    console.log(`Device session shared: ${session.id} - ${sessionName}`);
+    console.log(`Device session shared: ${sessionId} - ${sessionName}`);
+    
+    // Explicitly fetch and log sessions to debug
+    const allSessions = sessionService.getAllSessions();
+    console.log(`After sharing, session count: ${allSessions.length}`);
+    sessionService.debugDumpSessions();
+    
     return session;
   }
 
   stopSharingSession(): void {
     if (this.sharedSession) {
       // Close the session in SessionService
-      sessionService.closeSession(this.sharedSession.id);
+      const sessionId = this.sharedSession.id;
+      const result = sessionService.closeSession(sessionId);
+      console.log(`Session sharing stopped, session closed: ${result}`);
+      
       this.sharedSession = null;
-      console.log("Device session sharing stopped");
+      
+      // Verify sessions after closing
+      const remainingSessions = sessionService.getAllSessions();
+      console.log(`After stopping sharing, remaining sessions: ${remainingSessions.length}`);
     }
   }
 

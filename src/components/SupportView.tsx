@@ -24,11 +24,13 @@ export const SupportView = () => {
       setActiveSessions(sessions);
     };
 
+    // Register listener with SessionService
     sessionService.addSessionsListener(handleSessionsUpdate);
-
+    
     // Debug: Force an immediate check for sessions
     const currentSessions = sessionService.getAllSessions();
     console.log("SupportView: Initial sessions check:", currentSessions);
+    setActiveSessions(currentSessions);
     
     return () => {
       console.log("SupportView: Removing session listener");

@@ -49,10 +49,11 @@ class SessionImpl implements Session {
 class SessionService {
   private activeSessions: Map<string, Session> = new Map();
   private listeners: ((sessions: Session[]) => void)[] = [];
+  private updateIntervalId: number | null = null;
   
   constructor() {
-    // Update session durations periodically
-    setInterval(() => {
+    // Update session durations periodically and notify listeners
+    this.updateIntervalId = window.setInterval(() => {
       if (this.activeSessions.size > 0) {
         this.notifyListeners();
       }
@@ -71,7 +72,10 @@ class SessionService {
     const session = new SessionImpl(id, name, user, device);
     this.activeSessions.set(id, session);
     console.log(`[SessionService] Session created: ${id} - ${name} (total: ${this.activeSessions.size})`);
-    this.notifyListeners();
+    
+    // Ensure we notify listeners about the new session
+    setTimeout(() => this.notifyListeners(), 0);
+    
     return session;
   }
   
@@ -90,7 +94,9 @@ class SessionService {
     const result = this.activeSessions.delete(id);
     if (result) {
       console.log(`[SessionService] Session closed: ${id} (remaining: ${this.activeSessions.size})`);
-      this.notifyListeners();
+      
+      // Ensure we notify listeners about the closed session
+      setTimeout(() => this.notifyListeners(), 0);
     } else {
       console.log(`[SessionService] Failed to close session: ${id} (not found)`);
     }
@@ -100,9 +106,10 @@ class SessionService {
   addSessionsListener(callback: (sessions: Session[]) => void): void {
     console.log(`[SessionService] Adding listener (total: ${this.listeners.length + 1})`);
     this.listeners.push(callback);
+    
     // Call immediately with current sessions
     const sessions = this.getAllSessions();
-    callback(sessions);
+    setTimeout(() => callback(sessions), 0);
   }
   
   removeSessionsListener(callback: (sessions: Session[]) => void): void {
@@ -114,7 +121,25 @@ class SessionService {
   private notifyListeners(): void {
     const sessions = this.getAllSessions();
     console.log(`[SessionService] Notifying ${this.listeners.length} listeners with ${sessions.length} sessions`);
-    this.listeners.forEach(listener => listener(sessions));
+    
+    // Use setTimeout to ensure this happens asynchronously
+    setTimeout(() => {
+      this.listeners.forEach(listener => {
+        try {
+          listener(sessions);
+        } catch (error) {
+          console.error("[SessionService] Error in listener callback:", error);
+        }
+      });
+    }, 0);
+  }
+  
+  // Clean up when service is destroyed
+  destroy(): void {
+    if (this.updateIntervalId !== null) {
+      clearInterval(this.updateIntervalId);
+      this.updateIntervalId = null;
+    }
   }
   
   // For debugging - dump all sessions to console
