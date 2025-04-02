@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,16 @@ export const SupportView = () => {
   const [command, setCommand] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const scrollArea = scrollAreaRef.current;
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+  }, [serialOutput]);
 
   // Subscribe to session updates
   useEffect(() => {
@@ -224,9 +233,6 @@ export const SupportView = () => {
         return;
       }
       
-      // Add the command to the local serial output
-      setSerialOutput(prev => [...prev, `Support sent: ${command}`]);
-      
       // Clear the command input
       setCommand("");
       
@@ -333,7 +339,10 @@ export const SupportView = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm">
+              <ScrollArea 
+                className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm"
+                ref={scrollAreaRef}
+              >
                 {serialOutput.length > 0 ? (
                   serialOutput.map((line, index) => (
                     <div key={index} className="py-1">

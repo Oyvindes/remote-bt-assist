@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,6 +45,7 @@ export const UserDeviceView = () => {
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
   const [bluetoothError, setBluetoothError] = useState<BluetoothError | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const sessionForm = useForm<z.infer<typeof sessionFormSchema>>({
@@ -108,10 +108,15 @@ export const UserDeviceView = () => {
     };
   }, []);
   
-  // Listen for commands from support
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const scrollArea = scrollAreaRef.current;
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+  }, [serialOutput]);
+
   useEffect(() => {
     if (activeSession) {
-      // Subscribe to real-time updates for new commands
       const channel = supabase
         .channel('support-commands')
         .on('postgres_changes', {
@@ -123,7 +128,6 @@ export const UserDeviceView = () => {
           console.log("Received support command:", payload);
           const newCommand = payload.new as any;
           
-          // Execute the command on the device
           try {
             await bluetoothService.sendCommand(newCommand.command);
             setSerialOutput(prev => [...prev, `> [Support] ${newCommand.command}`]);
@@ -570,7 +574,10 @@ export const UserDeviceView = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm">
+            <ScrollArea 
+              className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm"
+              ref={scrollAreaRef}
+            >
               {serialOutput.length > 0 ? (
                 serialOutput.map((line, index) => (
                   <div key={index} className="py-1">
