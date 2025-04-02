@@ -1,4 +1,3 @@
-
 // This service handles Bluetooth device connectivity using the Web Bluetooth API
 
 export interface BluetoothDevice {
@@ -13,6 +12,14 @@ export interface ShareSession {
   deviceName: string;
 }
 
+export interface SerialConfig {
+  baudRate: number;
+  dataBits: number;
+  stopBits: number;
+  parity: 'none' | 'even' | 'odd';
+  flowControl: 'none' | 'hardware';
+}
+
 class BluetoothService {
   private device: BluetoothDevice | null = null;
   private connected: boolean = false;
@@ -23,6 +30,49 @@ class BluetoothService {
   private serialCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private gattServer: BluetoothRemoteGATTServer | null = null;
   private nativeDevice: globalThis.BluetoothDevice | null = null;
+  private serialConfig: SerialConfig = {
+    baudRate: 9600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: 'none',
+    flowControl: 'none'
+  };
+
+  // Get the current serial configuration
+  getSerialConfig(): SerialConfig {
+    return this.serialConfig;
+  }
+
+  // Set the serial configuration
+  setSerialConfig(config: Partial<SerialConfig>): void {
+    this.serialConfig = { ...this.serialConfig, ...config };
+    
+    // Notify listeners about the configuration change
+    this.notifyListeners(`Serial config updated: ${JSON.stringify(this.serialConfig)}`);
+    
+    // Apply config if already connected
+    if (this.connected && this.serialCharacteristic) {
+      this.applySerialConfig();
+    }
+  }
+
+  // Apply the serial configuration to the connected device
+  private async applySerialConfig(): Promise<void> {
+    if (!this.connected || !this.serialCharacteristic) {
+      throw new Error("Not connected to a device");
+    }
+
+    try {
+      // Configure serial parameters via AT commands (device specific)
+      // These commands may vary depending on the Bluetooth module
+      await this.sendCommand(`AT+BAUD=${this.serialConfig.baudRate}`);
+      
+      this.notifyListeners(`Applied serial config: Baud=${this.serialConfig.baudRate}, Data bits=${this.serialConfig.dataBits}, Stop bits=${this.serialConfig.stopBits}, Parity=${this.serialConfig.parity}, Flow control=${this.serialConfig.flowControl}`);
+    } catch (error) {
+      console.error("Error applying serial config:", error);
+      this.notifyListeners(`Error applying serial config: ${error}`);
+    }
+  }
 
   async scanForDevices(timeout: number = 5000): Promise<BluetoothDevice[]> {
     // If already scanning, return current list
@@ -126,6 +176,12 @@ class BluetoothService {
       });
       
       this.connected = true;
+      
+      // Initialize the serial config
+      this.notifyListeners(`Initializing with serial config: Baud=${this.serialConfig.baudRate}, Data bits=${this.serialConfig.dataBits}, Stop bits=${this.serialConfig.stopBits}, Parity=${this.serialConfig.parity}, Flow control=${this.serialConfig.flowControl}`);
+      
+      // Apply serial configuration if needed
+      await this.applySerialConfig();
       
       // Simulate some initial data for testing purposes
       setTimeout(() => {

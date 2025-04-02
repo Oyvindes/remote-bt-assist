@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw } from "lucide-react";
-import bluetoothService, { BluetoothDevice, ShareSession } from "@/services/BluetoothService";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings } from "lucide-react";
+import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Form schema for session naming
 const sessionFormSchema = z.object({
@@ -19,6 +20,15 @@ const sessionFormSchema = z.object({
   }).max(30, {
     message: "Session name must not be longer than 30 characters.",
   }),
+});
+
+// Form schema for serial configuration
+const serialConfigFormSchema = z.object({
+  baudRate: z.coerce.number().positive(),
+  dataBits: z.coerce.number().int().min(5).max(9),
+  stopBits: z.coerce.number().int().min(1).max(2),
+  parity: z.enum(["none", "even", "odd"]),
+  flowControl: z.enum(["none", "hardware"])
 });
 
 export const UserDeviceView = () => {
@@ -31,15 +41,33 @@ export const UserDeviceView = () => {
   const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
+  const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
   const { toast } = useToast();
 
-  // Initialize form
-  const form = useForm<z.infer<typeof sessionFormSchema>>({
+  // Initialize forms
+  const sessionForm = useForm<z.infer<typeof sessionFormSchema>>({
     resolver: zodResolver(sessionFormSchema),
     defaultValues: {
       sessionName: "",
     },
   });
+
+  const serialConfigForm = useForm<z.infer<typeof serialConfigFormSchema>>({
+    resolver: zodResolver(serialConfigFormSchema),
+    defaultValues: {
+      baudRate: 9600,
+      dataBits: 8,
+      stopBits: 1,
+      parity: "none",
+      flowControl: "none"
+    },
+  });
+
+  // Load initial serial config
+  useEffect(() => {
+    const config = bluetoothService.getSerialConfig();
+    serialConfigForm.reset(config);
+  }, []);
 
   // Handle serial data updates
   useEffect(() => {
@@ -175,6 +203,30 @@ export const UserDeviceView = () => {
     setCommand("");
   };
 
+  const openSerialConfigDialog = () => {
+    const config = bluetoothService.getSerialConfig();
+    serialConfigForm.reset(config);
+    setIsSerialConfigDialogOpen(true);
+  };
+
+  const onSerialConfigSubmit = (values: z.infer<typeof serialConfigFormSchema>) => {
+    try {
+      bluetoothService.setSerialConfig(values);
+      setIsSerialConfigDialogOpen(false);
+      
+      toast({
+        title: "Serial Configuration Updated",
+        description: `Baud: ${values.baudRate}, Data bits: ${values.dataBits}, Stop bits: ${values.stopBits}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Configuration Failed",
+        description: "Could not update serial configuration",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -195,7 +247,17 @@ export const UserDeviceView = () => {
                 <p>Connected to: {device?.name}</p>
               </div>
               <div className="flex justify-between mt-2">
-                <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={openSerialConfigDialog}
+                    className="flex items-center gap-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Serial Config
+                  </Button>
+                </div>
                 {isSharingSession ? (
                   <Button 
                     variant="destructive"
@@ -310,7 +372,6 @@ export const UserDeviceView = () => {
         </div>
       )}
 
-      {/* Session naming dialog */}
       <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -344,6 +405,176 @@ export const UserDeviceView = () => {
                   Cancel
                 </Button>
                 <Button type="submit">Share Session</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSerialConfigDialogOpen} onOpenChange={setIsSerialConfigDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Serial Configuration</DialogTitle>
+            <DialogDescription>
+              Configure the serial communication parameters
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...serialConfigForm}>
+            <form onSubmit={serialConfigForm.handleSubmit(onSerialConfigSubmit)} className="space-y-4">
+              <FormField
+                control={serialConfigForm.control}
+                name="baudRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Baud Rate</FormLabel>
+                    <Select 
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      defaultValue={field.value.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select baud rate" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="1200">1200</SelectItem>
+                        <SelectItem value="2400">2400</SelectItem>
+                        <SelectItem value="4800">4800</SelectItem>
+                        <SelectItem value="9600">9600</SelectItem>
+                        <SelectItem value="19200">19200</SelectItem>
+                        <SelectItem value="38400">38400</SelectItem>
+                        <SelectItem value="57600">57600</SelectItem>
+                        <SelectItem value="115200">115200</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Communication speed in bits per second
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={serialConfigForm.control}
+                name="dataBits"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Data Bits</FormLabel>
+                    <Select 
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      defaultValue={field.value.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select data bits" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="7">7</SelectItem>
+                        <SelectItem value="8">8</SelectItem>
+                        <SelectItem value="9">9</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Number of data bits per frame
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={serialConfigForm.control}
+                name="stopBits"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stop Bits</FormLabel>
+                    <Select 
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      defaultValue={field.value.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select stop bits" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Number of stop bits
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={serialConfigForm.control}
+                name="parity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Parity</FormLabel>
+                    <Select 
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select parity" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="even">Even</SelectItem>
+                        <SelectItem value="odd">Odd</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Type of parity checking
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={serialConfigForm.control}
+                name="flowControl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Flow Control</FormLabel>
+                    <Select 
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select flow control" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="hardware">Hardware</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Flow control method
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsSerialConfigDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Apply Settings</Button>
               </DialogFooter>
             </form>
           </Form>
