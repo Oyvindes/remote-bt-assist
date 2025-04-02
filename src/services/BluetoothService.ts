@@ -1,3 +1,4 @@
+
 import sessionService from './SessionService';
 
 export interface BluetoothDevice {
@@ -104,10 +105,11 @@ class BluetoothService {
       // Set up notifications for incoming data
       await characteristic.startNotifications();
       characteristic.addEventListener('characteristicvaluechanged', (event) => {
-        const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-        if (value) {
+        // Fix for TypeScript error: Cast event.target to unknown first, then to BluetoothRemoteGATTCharacteristic
+        const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
+        if (target.value) {
           const decoder = new TextDecoder('utf-8');
-          const data = decoder.decode(value);
+          const data = decoder.decode(target.value);
           this.notifyDataListeners(data);
         }
       });
