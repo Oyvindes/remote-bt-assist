@@ -298,19 +298,35 @@ class BluetoothService {
 
   // Disconnect from the device
   disconnect(): void {
-    if (this.connectedDevice?.device?.gatt?.connected) {
-      this.connectedDevice.device.gatt.disconnect();
-    }
+    console.log("Attempting to disconnect from device");
     
+    // First, clean up the characteristic
     if (this.characteristic) {
       try {
-        this.characteristic.stopNotifications();
+        // Only attempt to stop notifications if the device is still connected
+        if (this.connectedDevice?.device?.gatt?.connected) {
+          this.characteristic.stopNotifications()
+            .catch(err => {
+              // Log but don't throw - we're cleaning up anyway
+              console.warn("Error stopping notifications during disconnect:", err);
+            });
+        }
       } catch (error) {
-        console.error("Error stopping notifications:", error);
+        console.warn("Error during stopNotifications:", error);
       }
       this.characteristic = null;
     }
     
+    // Then disconnect from the device if still connected
+    if (this.connectedDevice?.device?.gatt?.connected) {
+      try {
+        this.connectedDevice.device.gatt.disconnect();
+      } catch (error) {
+        console.warn("Error disconnecting from GATT server:", error);
+      }
+    }
+    
+    // Always reset the connection state
     this.isConnectionActive = false;
     this.connectedDevice = null;
     console.log("Disconnected from device");
