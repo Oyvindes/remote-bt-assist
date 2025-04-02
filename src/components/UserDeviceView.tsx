@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +13,7 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import sessionService from "@/services/SessionService";
 
 // Form schema for session naming
 const sessionFormSchema = z.object({
@@ -66,7 +66,6 @@ export const UserDeviceView = () => {
     },
   });
 
-  // Periodic connection check
   useEffect(() => {
     let connectionCheckInterval: NodeJS.Timeout;
     
@@ -201,10 +200,19 @@ export const UserDeviceView = () => {
     setIsSessionDialogOpen(true);
   };
 
-  const onShareSessionSubmit = (values: z.infer<typeof sessionFormSchema>) => {
+  const onShareSessionSubmit = async (values: z.infer<typeof sessionFormSchema>) => {
     try {
-      const session = bluetoothService.shareDeviceSession(values.sessionName);
-      setActiveSession(session);
+      const deviceIdentifier = device ? device.name : "Unknown Device";
+      
+      const session = await sessionService.createSession(
+        values.sessionName,
+        "User",
+        deviceIdentifier
+      );
+      
+      const bluetoothSession = bluetoothService.shareDeviceSession(session.name, session.id);
+      
+      setActiveSession(bluetoothSession);
       setIsSharingSession(true);
       setIsSessionDialogOpen(false);
       
@@ -213,23 +221,37 @@ export const UserDeviceView = () => {
         description: `Session ID: ${session.id}. A support agent can now connect to your device.`,
       });
     } catch (error) {
+      console.error("Error sharing session:", error);
       toast({
         title: "Sharing Failed",
-        description: "Could not share device session",
+        description: "Could not share device session. Please try again.",
         variant: "destructive",
       });
     }
   };
 
-  const stopSharingSession = () => {
-    bluetoothService.stopSharingSession();
-    setIsSharingSession(false);
-    setActiveSession(null);
-    
-    toast({
-      title: "Session Ended",
-      description: "Remote sharing has been stopped",
-    });
+  const stopSharingSession = async () => {
+    if (activeSession) {
+      try {
+        await sessionService.closeSession(activeSession.id);
+        
+        bluetoothService.stopSharingSession();
+        setIsSharingSession(false);
+        setActiveSession(null);
+        
+        toast({
+          title: "Session Ended",
+          description: "Remote sharing has been stopped",
+        });
+      } catch (error) {
+        console.error("Error stopping session:", error);
+        toast({
+          title: "Error Ending Session",
+          description: "Could not properly end the session. Please try again.",
+          variant: "destructive",
+        });
+      }
+    }
   };
 
   const sendCommand = async () => {
@@ -239,7 +261,6 @@ export const UserDeviceView = () => {
     setIsSending(true);
     
     try {
-      // Check connection before trying to send
       const connected = await bluetoothService.verifyConnection();
       if (!connected) {
         setIsConnected(false);
@@ -248,7 +269,6 @@ export const UserDeviceView = () => {
       
       await bluetoothService.sendCommand(command);
       
-      // Success notification
       toast({
         title: "Command Sent",
         description: "Command was sent to the device",
@@ -256,12 +276,10 @@ export const UserDeviceView = () => {
     } catch (error) {
       console.error("Command error:", error);
       
-      // Update connection status if device is disconnected
       if ('type' in error && (error as BluetoothError).type === 'device-disconnected') {
         setIsConnected(false);
       }
       
-      // Show error toast with more detailed message
       let errorMessage = "Could not send command to the device";
       if ('type' in error) {
         const btError = error as BluetoothError;
@@ -339,7 +357,6 @@ export const UserDeviceView = () => {
     setBluetoothError(null);
   };
 
-  // Function to reconnect if the device appears to be disconnected
   const reconnectDevice = async () => {
     if (!device) return;
     

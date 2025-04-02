@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Send, UserCircle, Users, RefreshCw } from "lucide-react";
+import { Send, UserCircle, Users, RefreshCw, Loader2 } from "lucide-react";
 import sessionService, { Session } from "@/services/SessionService";
 
 export const SupportView = () => {
@@ -14,6 +14,7 @@ export const SupportView = () => {
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
   const [command, setCommand] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   // Subscribe to session updates
@@ -23,18 +24,22 @@ export const SupportView = () => {
     const handleSessionsUpdate = (sessions: Session[]) => {
       console.log("SupportView: Received sessions update:", sessions);
       setActiveSessions(sessions);
+      setIsLoading(false);
     };
 
     // Register listener with SessionService
     sessionService.addSessionsListener(handleSessionsUpdate);
     
-    // Debug: Force an immediate check for sessions
-    const currentSessions = sessionService.getAllSessions();
-    console.log("SupportView: Initial sessions check:", currentSessions);
-    setActiveSessions(currentSessions);
-    
-    // Force a refresh from storage to catch any sessions created in other tabs/windows
-    sessionService.forceRefreshFromStorage();
+    // Force a refresh from database
+    const fetchSessions = async () => {
+      try {
+        await sessionService.forceRefreshFromDb();
+      } catch (error) {
+        console.error("Error fetching sessions:", error);
+        setIsLoading(false);
+      }
+    };
+    fetchSessions();
     
     return () => {
       console.log("SupportView: Removing session listener");
@@ -42,48 +47,62 @@ export const SupportView = () => {
     };
   }, []);
 
-  const refreshSessions = () => {
+  const refreshSessions = async () => {
     setIsRefreshing(true);
     console.log("SupportView: Manually refreshing sessions");
     
-    // Force a refresh from storage
-    sessionService.forceRefreshFromStorage();
-    
-    // Dump current sessions to console for debugging
-    sessionService.debugDumpSessions();
-    
-    // Force update the state with current sessions
-    const currentSessions = sessionService.getAllSessions();
-    setActiveSessions(currentSessions);
-    
-    toast({
-      title: "Refreshed Sessions",
-      description: `Found ${currentSessions.length} active sessions`,
-    });
-    
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
-
-  const connectToSession = (sessionId: string) => {
-    const session = sessionService.getSession(sessionId);
-    if (!session) {
+    try {
+      // Force a refresh from database
+      await sessionService.forceRefreshFromDb();
+      
+      // Dump current sessions to console for debugging
+      sessionService.debugDumpSessions();
+      
       toast({
-        title: "Session not found",
-        description: "The selected session is no longer available",
+        title: "Refreshed Sessions",
+        description: `Found ${activeSessions.length} active sessions`,
+      });
+    } catch (error) {
+      console.error("Error refreshing sessions:", error);
+      toast({
+        title: "Refresh Failed",
+        description: "Could not refresh sessions. Please try again.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 1000);
     }
+  };
 
-    setConnectedSession(sessionId);
-    
-    // Initialize empty serial output
-    setSerialOutput([]);
-    
-    toast({
-      title: "Connected to Session",
-      description: `You are now connected to ${session.name}`,
-    });
+  const connectToSession = async (sessionId: string) => {
+    try {
+      const session = await sessionService.getSession(sessionId);
+      if (!session) {
+        toast({
+          title: "Session not found",
+          description: "The selected session is no longer available",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setConnectedSession(sessionId);
+      
+      // Initialize empty serial output
+      setSerialOutput([]);
+      
+      toast({
+        title: "Connected to Session",
+        description: `You are now connected to ${session.name}`,
+      });
+    } catch (error) {
+      console.error("Error connecting to session:", error);
+      toast({
+        title: "Connection Failed",
+        description: "Could not connect to the session",
+        variant: "destructive",
+      });
+    }
   };
 
   const disconnectSession = () => {
@@ -133,7 +152,14 @@ export const SupportView = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {activeSessions.length > 0 ? (
+            {isLoading ? (
+              <div className="flex justify-center items-center h-40">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                  <p className="text-sm text-muted-foreground">Loading sessions...</p>
+                </div>
+              </div>
+            ) : activeSessions.length > 0 ? (
               <div className="space-y-2">
                 {activeSessions.map((session) => (
                   <div 

@@ -169,6 +169,39 @@ export type Database = {
         }
         Relationships: []
       }
+      remote_sessions: {
+        Row: {
+          created_at: string
+          device: string
+          id: string
+          is_active: boolean
+          last_active: string
+          name: string
+          start_time: string
+          user_name: string
+        }
+        Insert: {
+          created_at?: string
+          device: string
+          id?: string
+          is_active?: boolean
+          last_active?: string
+          name: string
+          start_time?: string
+          user_name: string
+        }
+        Update: {
+          created_at?: string
+          device?: string
+          id?: string
+          is_active?: boolean
+          last_active?: string
+          name?: string
+          start_time?: string
+          user_name?: string
+        }
+        Relationships: []
+      }
       users: {
         Row: {
           created_at: string

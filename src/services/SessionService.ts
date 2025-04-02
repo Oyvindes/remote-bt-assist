@@ -1,6 +1,8 @@
-
 // This service facilitates session management for remote support
-// In a production environment, this would integrate with a backend service
+// Uses Supabase for persistent storage to work across different networks and devices
+
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 export interface Session {
   id: string;
@@ -22,12 +24,12 @@ class SessionImpl implements Session {
   device: string;
   startTime: Date;
   
-  constructor(id: string, name: string, user: string, device: string) {
+  constructor(id: string, name: string, user: string, device: string, startTime: Date = new Date()) {
     this.id = id;
     this.name = name;
     this.user = user;
     this.device = device;
-    this.startTime = new Date();
+    this.startTime = startTime;
   }
   
   getDuration(): number {
@@ -46,153 +48,225 @@ class SessionImpl implements Session {
   }
 }
 
-// Serialize and deserialize session data for storage
-const serializeSession = (session: Session): string => {
-  return JSON.stringify({
-    id: session.id,
-    name: session.name,
-    user: session.user,
-    device: session.device,
-    startTime: session.startTime.toISOString()
-  });
-};
-
-const deserializeSession = (json: string): Session => {
-  const data = JSON.parse(json);
-  const session = new SessionImpl(
-    data.id, 
-    data.name, 
-    data.user, 
-    data.device
-  );
-  session.startTime = new Date(data.startTime);
-  return session;
-};
-
 class SessionService {
   private activeSessions: Map<string, Session> = new Map();
   private listeners: ((sessions: Session[]) => void)[] = [];
   private updateIntervalId: number | null = null;
-  private storageKey = 'remote-bt-assist-sessions';
+  private isFetching: boolean = false;
   
   constructor() {
-    // Load any sessions from localStorage on initialization
-    this.loadSessionsFromStorage();
+    console.log("[SessionService] Initialized with Supabase integration");
     
-    // Setup window storage event listener for cross-tab/window coordination
-    window.addEventListener('storage', this.handleStorageChange);
-    
-    // Update session durations periodically and notify listeners
+    // Setup periodic updates to keep session data fresh
     this.updateIntervalId = window.setInterval(() => {
       if (this.activeSessions.size > 0) {
+        this.updateSessionsInDb();
         this.notifyListeners();
+      } else {
+        this.fetchSessionsFromDb();
       }
-    }, 10000); // Update every 10 seconds for more frequent checks
+    }, 10000); // Update every 10 seconds
     
-    // Log session info for debugging
-    console.log("[SessionService] Initialized");
-    
-    // Verify if any sessions are loaded on startup
-    if (this.activeSessions.size > 0) {
-      console.log(`[SessionService] Loaded ${this.activeSessions.size} sessions from storage`);
-      this.debugDumpSessions();
-      
-      // Notify listeners immediately if we have sessions
-      setTimeout(() => this.notifyListeners(), 100);
-    }
+    // Do an initial fetch of sessions from the database
+    this.fetchSessionsFromDb();
   }
   
-  private loadSessionsFromStorage(): void {
+  private async fetchSessionsFromDb(): Promise<void> {
+    if (this.isFetching) return;
+    
     try {
-      const storedSessions = localStorage.getItem(this.storageKey);
-      if (storedSessions) {
-        const sessionData: Record<string, string> = JSON.parse(storedSessions);
-        
-        Object.entries(sessionData).forEach(([id, serializedSession]) => {
-          try {
-            const session = deserializeSession(serializedSession);
-            this.activeSessions.set(id, session);
-          } catch (error) {
-            console.error(`[SessionService] Error deserializing session ${id}:`, error);
-          }
-        });
-      }
-    } catch (error) {
-      console.error('[SessionService] Error loading sessions from storage:', error);
-    }
-  }
-  
-  private saveSessionsToStorage(): void {
-    try {
-      const sessionData: Record<string, string> = {};
+      this.isFetching = true;
+      console.log("[SessionService] Fetching sessions from Supabase");
       
-      this.activeSessions.forEach((session, id) => {
-        sessionData[id] = serializeSession(session);
+      const { data, error } = await supabase
+        .from('remote_sessions')
+        .select('*')
+        .eq('is_active', true);
+      
+      if (error) {
+        console.error('[SessionService] Error fetching sessions:', error);
+        return;
+      }
+      
+      // Convert the DB records to Session objects
+      this.activeSessions.clear();
+      data.forEach(record => {
+        const session = new SessionImpl(
+          record.id,
+          record.name,
+          record.user_name,
+          record.device,
+          new Date(record.start_time)
+        );
+        this.activeSessions.set(record.id, session);
       });
       
-      localStorage.setItem(this.storageKey, JSON.stringify(sessionData));
-      
-      // Dispatch a storage event to notify other tabs/windows
-      // This is needed because localStorage events don't fire in the same window that made the change
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: this.storageKey,
-        newValue: JSON.stringify(sessionData),
-        storageArea: localStorage
-      }));
-    } catch (error) {
-      console.error('[SessionService] Error saving sessions to storage:', error);
-    }
-  }
-  
-  private handleStorageChange = (event: StorageEvent): void => {
-    if (event.key === this.storageKey && event.newValue !== null) {
-      console.log('[SessionService] Detected storage change, reloading sessions');
-      this.loadSessionsFromStorage();
+      console.log(`[SessionService] Loaded ${this.activeSessions.size} sessions from Supabase`);
       this.notifyListeners();
+    } catch (error) {
+      console.error('[SessionService] Error in fetchSessionsFromDb:', error);
+    } finally {
+      this.isFetching = false;
     }
-  };
-  
-  createSession(name: string, user: string, device: string): Session {
-    // Generate a unique ID (more readable for debugging)
-    const id = Math.random().toString(36).substring(2, 10);
-    const session = new SessionImpl(id, name, user, device);
-    this.activeSessions.set(id, session);
-    console.log(`[SessionService] Session created: ${id} - ${name} (total: ${this.activeSessions.size})`);
-    
-    // Save to localStorage
-    this.saveSessionsToStorage();
-    
-    // Ensure we notify listeners about the new session
-    setTimeout(() => this.notifyListeners(), 0);
-    
-    return session;
   }
   
-  getSession(id: string): Session | undefined {
-    return this.activeSessions.get(id);
+  private async updateSessionsInDb(): Promise<void> {
+    try {
+      // Update last_active timestamp for all active sessions
+      for (const [id, _] of this.activeSessions) {
+        await supabase
+          .from('remote_sessions')
+          .update({ last_active: new Date().toISOString() })
+          .eq('id', id);
+      }
+    } catch (error) {
+      console.error('[SessionService] Error updating sessions in DB:', error);
+    }
   }
   
-  getAllSessions(): Session[] {
+  async createSession(name: string, user: string, device: string): Promise<Session> {
+    console.log(`[SessionService] Creating new session: ${name}`);
+    
+    try {
+      // Insert new session into the database
+      const { data, error } = await supabase
+        .from('remote_sessions')
+        .insert([
+          { 
+            name, 
+            user_name: user, 
+            device,
+            start_time: new Date().toISOString(),
+            last_active: new Date().toISOString(),
+            is_active: true
+          }
+        ])
+        .select();
+      
+      if (error) {
+        console.error('[SessionService] Error creating session:', error);
+        toast({
+          title: "Session Creation Failed",
+          description: "Could not create support session. Please try again.",
+          variant: "destructive"
+        });
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error('No data returned from session creation');
+      }
+      
+      const newSession = new SessionImpl(
+        data[0].id,
+        data[0].name,
+        data[0].user_name,
+        data[0].device,
+        new Date(data[0].start_time)
+      );
+      
+      // Add to local cache
+      this.activeSessions.set(newSession.id, newSession);
+      console.log(`[SessionService] Session created with ID: ${newSession.id}`);
+      
+      // Notify listeners
+      setTimeout(() => this.notifyListeners(), 0);
+      
+      return newSession;
+    } catch (error) {
+      console.error('[SessionService] Error in createSession:', error);
+      toast({
+        title: "Session Creation Failed",
+        description: "Could not create support session. Please try again.",
+        variant: "destructive"
+      });
+      throw error;
+    }
+  }
+  
+  async getSession(id: string): Promise<Session | undefined> {
+    // First check local cache
+    if (this.activeSessions.has(id)) {
+      return this.activeSessions.get(id);
+    }
+    
+    // If not in cache, try to fetch from database
+    try {
+      const { data, error } = await supabase
+        .from('remote_sessions')
+        .select('*')
+        .eq('id', id)
+        .eq('is_active', true)
+        .maybeSingle();
+      
+      if (error) {
+        console.error(`[SessionService] Error fetching session ${id}:`, error);
+        return undefined;
+      }
+      
+      if (!data) {
+        return undefined;
+      }
+      
+      const session = new SessionImpl(
+        data.id,
+        data.name,
+        data.user_name,
+        data.device,
+        new Date(data.start_time)
+      );
+      
+      // Add to local cache
+      this.activeSessions.set(id, session);
+      
+      return session;
+    } catch (error) {
+      console.error(`[SessionService] Error getting session ${id}:`, error);
+      return undefined;
+    }
+  }
+  
+  async getAllSessions(): Promise<Session[]> {
+    // First refresh from DB to make sure we have the latest data
+    await this.fetchSessionsFromDb();
+    
     const sessions = Array.from(this.activeSessions.values());
     console.log(`[SessionService] Getting all sessions: found ${sessions.length}`);
     return sessions;
   }
   
-  closeSession(id: string): boolean {
+  async closeSession(id: string): Promise<boolean> {
     console.log(`[SessionService] Attempting to close session: ${id}`);
-    const result = this.activeSessions.delete(id);
-    if (result) {
-      console.log(`[SessionService] Session closed: ${id} (remaining: ${this.activeSessions.size})`);
+    
+    try {
+      // Mark session as inactive in the database
+      const { error } = await supabase
+        .from('remote_sessions')
+        .update({ is_active: false })
+        .eq('id', id);
       
-      // Update localStorage
-      this.saveSessionsToStorage();
+      if (error) {
+        console.error(`[SessionService] Error closing session ${id}:`, error);
+        return false;
+      }
       
-      // Ensure we notify listeners about the closed session
-      setTimeout(() => this.notifyListeners(), 0);
-    } else {
-      console.log(`[SessionService] Failed to close session: ${id} (not found)`);
+      // Remove from local cache
+      const result = this.activeSessions.delete(id);
+      
+      if (result) {
+        console.log(`[SessionService] Session closed: ${id}`);
+        
+        // Notify listeners
+        setTimeout(() => this.notifyListeners(), 0);
+      } else {
+        console.log(`[SessionService] Session not found in local cache: ${id}`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error(`[SessionService] Error in closeSession ${id}:`, error);
+      return false;
     }
-    return result;
   }
   
   addSessionsListener(callback: (sessions: Session[]) => void): void {
@@ -200,7 +274,7 @@ class SessionService {
     this.listeners.push(callback);
     
     // Call immediately with current sessions
-    const sessions = this.getAllSessions();
+    const sessions = Array.from(this.activeSessions.values());
     setTimeout(() => callback(sessions), 0);
   }
   
@@ -211,7 +285,7 @@ class SessionService {
   }
   
   private notifyListeners(): void {
-    const sessions = this.getAllSessions();
+    const sessions = Array.from(this.activeSessions.values());
     console.log(`[SessionService] Notifying ${this.listeners.length} listeners with ${sessions.length} sessions`);
     
     // Use setTimeout to ensure this happens asynchronously
@@ -232,9 +306,12 @@ class SessionService {
       clearInterval(this.updateIntervalId);
       this.updateIntervalId = null;
     }
-    
-    // Remove storage event listener
-    window.removeEventListener('storage', this.handleStorageChange);
+  }
+  
+  // Force refresh from database (useful for manual refresh)
+  async forceRefreshFromDb(): Promise<void> {
+    console.log('[SessionService] Forcing refresh from database');
+    await this.fetchSessionsFromDb();
   }
   
   // For debugging - dump all sessions to console
@@ -243,13 +320,6 @@ class SessionService {
     this.activeSessions.forEach((session, id) => {
       console.log(`  - ID: ${id}, Name: ${session.name}, User: ${session.user}, Device: ${session.device}, Duration: ${session.getFormattedDuration()}`);
     });
-  }
-  
-  // Force check storage for sessions (useful for manual refresh)
-  forceRefreshFromStorage(): void {
-    console.log('[SessionService] Forcing refresh from storage');
-    this.loadSessionsFromStorage();
-    this.notifyListeners();
   }
 }
 
