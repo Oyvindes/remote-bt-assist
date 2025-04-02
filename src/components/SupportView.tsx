@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Send, UserCircle, Users, RefreshCw, Loader2 } from "lucide-react";
 import sessionService, { Session } from "@/services/SessionService";
+import { supabase } from "@/integrations/supabase/client";
 
 export const SupportView = () => {
   const [activeSessions, setActiveSessions] = useState<Session[]>([]);
@@ -58,6 +58,61 @@ export const SupportView = () => {
     };
   }, [connectedSession, toast]);
 
+  // Load existing commands when connecting to a session
+  useEffect(() => {
+    if (connectedSession) {
+      const fetchCommands = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('session_commands')
+            .select('*')
+            .eq('session_id', connectedSession)
+            .order('timestamp', { ascending: true });
+            
+          if (error) {
+            console.error("Error fetching commands:", error);
+            return;
+          }
+          
+          if (data && data.length > 0) {
+            const commandOutput = data.map(cmd => 
+              cmd.sender === 'support' 
+                ? `Support sent: ${cmd.command}` 
+                : `User sent: ${cmd.command}`
+            );
+            setSerialOutput(commandOutput);
+          }
+        } catch (error) {
+          console.error("Error in fetchCommands:", error);
+        }
+      };
+      
+      fetchCommands();
+      
+      // Subscribe to real-time updates for new commands
+      const channel = supabase
+        .channel('session-commands')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'session_commands',
+          filter: `session_id=eq.${connectedSession}`
+        }, (payload) => {
+          const newCommand = payload.new as any;
+          const formattedCommand = newCommand.sender === 'support'
+            ? `Support sent: ${newCommand.command}`
+            : `User sent: ${newCommand.command}`;
+            
+          setSerialOutput(prev => [...prev, formattedCommand]);
+        })
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [connectedSession]);
+
   const refreshSessions = async () => {
     setIsRefreshing(true);
     console.log("SupportView: Manually refreshing sessions");
@@ -99,7 +154,7 @@ export const SupportView = () => {
 
       setConnectedSession(sessionId);
       
-      // Initialize empty serial output
+      // Initialize empty serial output (will be populated from useEffect)
       setSerialOutput([]);
       
       toast({
@@ -134,16 +189,44 @@ export const SupportView = () => {
     }
   };
 
-  const sendCommand = () => {
+  const sendCommand = async () => {
     if (command.trim() === "" || !connectedSession) return;
     
-    // Add the command to the serial output
-    setSerialOutput(prev => [...prev, `Support sent: ${command}`]);
-    
-    // Here is where real implementation would send the command to the connected session
-    // This would involve sending the command to a backend service or directly to the user's device
-    
-    setCommand("");
+    try {
+      // Add the command to the database
+      const { error } = await supabase
+        .from('session_commands')
+        .insert([
+          {
+            session_id: connectedSession,
+            command: command,
+            sender: 'support'
+          }
+        ]);
+        
+      if (error) {
+        console.error("Error saving command:", error);
+        toast({
+          title: "Command Failed",
+          description: "Could not send the command",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Add the command to the local serial output
+      setSerialOutput(prev => [...prev, `Support sent: ${command}`]);
+      
+      // Clear the command input
+      setCommand("");
+    } catch (error) {
+      console.error("Error in sendCommand:", error);
+      toast({
+        title: "Command Failed",
+        description: "Could not send the command",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

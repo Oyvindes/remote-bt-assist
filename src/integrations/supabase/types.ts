@@ -9,7 +9,68 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      remote_sessions: {
+        Row: {
+          device: string
+          id: string
+          is_active: boolean
+          last_active: string
+          name: string
+          start_time: string
+          user_name: string
+        }
+        Insert: {
+          device: string
+          id?: string
+          is_active?: boolean
+          last_active?: string
+          name: string
+          start_time?: string
+          user_name: string
+        }
+        Update: {
+          device?: string
+          id?: string
+          is_active?: boolean
+          last_active?: string
+          name?: string
+          start_time?: string
+          user_name?: string
+        }
+        Relationships: []
+      }
+      session_commands: {
+        Row: {
+          command: string
+          id: string
+          sender: string
+          session_id: string
+          timestamp: string
+        }
+        Insert: {
+          command: string
+          id?: string
+          sender: string
+          session_id: string
+          timestamp?: string
+        }
+        Update: {
+          command?: string
+          id?: string
+          sender?: string
+          session_id?: string
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_commands_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "remote_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
