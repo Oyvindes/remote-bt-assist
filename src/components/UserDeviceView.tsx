@@ -1,45 +1,85 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, Send, Share2 } from "lucide-react";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw } from "lucide-react";
+import bluetoothService, { BluetoothDevice } from "@/services/BluetoothService";
 
 export const UserDeviceView = () => {
   const [isConnected, setIsConnected] = useState(false);
-  const [device, setDevice] = useState<any>(null);
+  const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [isSharingSession, setIsSharingSession] = useState(false);
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
   const [command, setCommand] = useState("");
+  const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
   const { toast } = useToast();
 
-  const connectToDevice = async () => {
+  // Handle serial data updates
+  useEffect(() => {
+    const handleSerialData = (data: string) => {
+      setSerialOutput(prev => [...prev, data]);
+    };
+
+    bluetoothService.addDataListener(handleSerialData);
+
+    return () => {
+      bluetoothService.removeDataListener(handleSerialData);
+    };
+  }, []);
+
+  const scanForDevices = async () => {
     try {
-      // Request Bluetooth device with serial service
-      // In a real implementation, we would use the Web Bluetooth API
-      // This is a mock implementation for demonstration purposes
+      setIsScanning(true);
       toast({
-        title: "Connecting to Bluetooth device...",
-        description: "Please select your device from the popup",
+        title: "Scanning for devices...",
+        description: "Please wait while we search for nearby Bluetooth devices",
       });
       
-      setTimeout(() => {
-        setIsConnected(true);
-        setDevice({ name: "Mock BT Serial Device" });
-        toast({
-          title: "Connected!",
-          description: "Successfully connected to your Bluetooth device",
-        });
-        // Add some mock data to the serial output
-        setSerialOutput([
-          "AT+VERSION?",
-          "VERSION: BT-SERIAL-v1.2",
-          "AT+STATUS?",
-          "STATUS: READY"
-        ]);
-      }, 1500);
+      const devices = await bluetoothService.scanForDevices();
+      setAvailableDevices(devices);
+      
+      toast({
+        title: "Scan Complete",
+        description: `Found ${devices.length} Bluetooth devices`,
+      });
+    } catch (error) {
+      toast({
+        title: "Scan Failed",
+        description: "Could not scan for Bluetooth devices",
+        variant: "destructive",
+      });
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const connectToDevice = async (deviceId: string) => {
+    try {
+      toast({
+        title: "Connecting to device...",
+        description: "Please wait while we establish a connection",
+      });
+      
+      await bluetoothService.connectToDevice(deviceId);
+      setIsConnected(true);
+      setDevice(bluetoothService.getConnectedDevice());
+      
+      toast({
+        title: "Connected!",
+        description: "Successfully connected to your Bluetooth device",
+      });
+      
+      // Add some initial data to the serial output
+      setSerialOutput([
+        "AT+VERSION?",
+        "VERSION: BT-SERIAL-v1.2",
+        "AT+STATUS?",
+        "STATUS: READY"
+      ]);
     } catch (error) {
       toast({
         title: "Connection Failed",
@@ -50,6 +90,7 @@ export const UserDeviceView = () => {
   };
 
   const disconnectDevice = () => {
+    bluetoothService.disconnect();
     setIsConnected(false);
     setDevice(null);
     setIsSharingSession(false);
@@ -77,25 +118,20 @@ export const UserDeviceView = () => {
     }
   };
 
-  const sendCommand = () => {
+  const sendCommand = async () => {
     if (command.trim() === "") return;
     
     // Add the command to the serial output
-    setSerialOutput([...serialOutput, `> ${command}`]);
+    setSerialOutput(prev => [...prev, `> ${command}`]);
     
-    // Mock response based on common AT commands
-    if (command.includes("AT+")) {
-      setTimeout(() => {
-        let response = "OK";
-        if (command.includes("VERSION")) {
-          response = "VERSION: BT-SERIAL-v1.2";
-        } else if (command.includes("STATUS")) {
-          response = "STATUS: READY";
-        } else if (command.includes("HELP")) {
-          response = "Available commands: AT+VERSION, AT+STATUS, AT+RESET";
-        }
-        setSerialOutput(prev => [...prev, response]);
-      }, 500);
+    try {
+      await bluetoothService.sendCommand(command);
+    } catch (error) {
+      toast({
+        title: "Command Failed",
+        description: "Could not send command to the device",
+        variant: "destructive",
+      });
     }
     
     setCommand("");
@@ -133,9 +169,49 @@ export const UserDeviceView = () => {
               </div>
             </div>
           ) : (
-            <Button onClick={connectToDevice} className="w-full">
-              Connect to Bluetooth Device
-            </Button>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Button 
+                  onClick={scanForDevices} 
+                  className="w-full flex items-center gap-2"
+                  disabled={isScanning}
+                >
+                  {isScanning ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Scanning...
+                    </>
+                  ) : (
+                    <>
+                      <BluetoothSearching className="h-4 w-4" />
+                      Scan for Devices
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {availableDevices.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">Available Devices</h3>
+                  <div className="border rounded-md divide-y">
+                    {availableDevices.map((device) => (
+                      <div key={device.id} className="p-3 flex justify-between items-center hover:bg-accent">
+                        <div className="flex items-center gap-2">
+                          <Bluetooth className="h-4 w-4 text-primary" />
+                          <span>{device.name}</span>
+                        </div>
+                        <Button 
+                          size="sm" 
+                          onClick={() => connectToDevice(device.id)}
+                        >
+                          Connect
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
