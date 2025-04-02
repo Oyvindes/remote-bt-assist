@@ -18,6 +18,7 @@ export const SupportView = () => {
   // Subscribe to session updates
   useEffect(() => {
     const handleSessionsUpdate = (sessions: Session[]) => {
+      console.log("SupportView received sessions update:", sessions);
       setActiveSessions(sessions);
     };
 
@@ -26,6 +27,11 @@ export const SupportView = () => {
     return () => {
       sessionService.removeSessionsListener(handleSessionsUpdate);
     };
+  }, []);
+
+  // Log when component mounts to help with debugging
+  useEffect(() => {
+    console.log("SupportView mounted, current sessions:", sessionService.getAllSessions());
   }, []);
 
   const connectToSession = (sessionId: string) => {

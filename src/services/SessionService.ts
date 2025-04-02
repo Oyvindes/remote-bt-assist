@@ -57,6 +57,16 @@ class SessionService {
         this.notifyListeners();
       }
     }, 60000); // Update every minute
+
+    // Initialize with any mock sessions if needed
+    // Uncomment for testing
+    /*
+    this.createSession(
+      "Test Device Session", 
+      "John Doe", 
+      "HC-05 Bluetooth Module"
+    );
+    */
   }
   
   createSession(name: string, user: string, device: string): Session {
@@ -64,6 +74,7 @@ class SessionService {
     const session = new SessionImpl(id, name, user, device);
     this.activeSessions.set(id, session);
     this.notifyListeners();
+    console.log(`Session created: ${id} - ${name}`);
     return session;
   }
   
@@ -78,6 +89,7 @@ class SessionService {
   closeSession(id: string): boolean {
     const result = this.activeSessions.delete(id);
     if (result) {
+      console.log(`Session closed: ${id}`);
       this.notifyListeners();
     }
     return result;
