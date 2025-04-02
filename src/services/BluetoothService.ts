@@ -1,4 +1,6 @@
+
 import sessionService from './SessionService';
+import { supabase } from "@/integrations/supabase/client";
 
 export interface BluetoothDevice {
   id: string;
@@ -246,6 +248,11 @@ class BluetoothService {
             const decoder = new TextDecoder('utf-8');
             const data = decoder.decode(target.value);
             this.notifyDataListeners(data);
+            
+            // If we have an active shared session, send to the support view via database
+            if (this.sharedSession) {
+              this.saveReceivedDataToDb(data);
+            }
           }
         });
       } catch (error) {
@@ -262,6 +269,29 @@ class BluetoothService {
       this.characteristic = null;
       console.error("Error connecting to Bluetooth device:", error);
       throw this.parseBluetoothError(error);
+    }
+  }
+  
+  // Save device data to the database for support view
+  private async saveReceivedDataToDb(data: string): Promise<void> {
+    if (!this.sharedSession) return;
+    
+    try {
+      const { error } = await supabase
+        .from('session_commands')
+        .insert([
+          {
+            session_id: this.sharedSession.id,
+            command: data,
+            sender: 'device' // Indicate this came from the device
+          }
+        ]);
+        
+      if (error) {
+        console.error("Error saving device data to database:", error);
+      }
+    } catch (err) {
+      console.error("Error in saveReceivedDataToDb:", err);
     }
   }
 
@@ -356,6 +386,11 @@ class BluetoothService {
       const data = encoder.encode(command + '\r\n'); // Add carriage return and line feed for AT commands
       await this.characteristic.writeValue(data);
       console.log(`Command sent: ${command}`);
+      
+      // If we have an active shared session, log this command to the database
+      if (this.sharedSession) {
+        await this.saveCommandToDb(command, 'user');
+      }
     } catch (error) {
       console.error("Error sending command:", error);
       // Reset connection state on error
@@ -364,6 +399,29 @@ class BluetoothService {
         this.characteristic = null;
       }
       throw this.parseBluetoothError(error);
+    }
+  }
+
+  private async saveCommandToDb(command: string, sender: 'user' | 'support'): Promise<void> {
+    if (!this.sharedSession) return;
+    
+    try {
+      console.log(`Saving command to DB: ${command} from ${sender}`);
+      const { error } = await supabase
+        .from('session_commands')
+        .insert([
+          {
+            session_id: this.sharedSession.id,
+            command: command,
+            sender: sender
+          }
+        ]);
+        
+      if (error) {
+        console.error("Error saving command to database:", error);
+      }
+    } catch (err) {
+      console.error("Error in saveCommandToDb:", err);
     }
   }
 
@@ -399,7 +457,13 @@ class BluetoothService {
       sessionName,
       "Remote User", // We could make this configurable
       this.connectedDevice.name || "Unknown Device"
-    );
+    ).then(newSession => {
+      this.sharedSession = {
+        id: newSession.id,
+        name: newSession.name
+      };
+      console.log(`Device session shared with DB ID: ${newSession.id}`);
+    });
     
     console.log(`Device session shared: ${sessionId} - ${sessionName}`);
     
@@ -439,6 +503,24 @@ class BluetoothService {
 
   getSerialConfig(): SerialConfig {
     return this.serialConfig;
+  }
+  
+  // Method for support to send commands to the user's device
+  async receiveSupportCommand(command: string): Promise<void> {
+    console.log(`Support command received: ${command}`);
+    
+    // Check if a device is connected to execute the command
+    if (this.isConnected()) {
+      try {
+        await this.sendCommand(command);
+      } catch (error) {
+        console.error("Error executing support command:", error);
+        throw this.parseBluetoothError(error);
+      }
+    } else {
+      console.error("Cannot execute support command - no device connected");
+      throw this.parseBluetoothError(new Error("No device connected to execute command"));
+    }
   }
 }
 

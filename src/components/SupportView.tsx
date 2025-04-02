@@ -64,6 +64,7 @@ export const SupportView = () => {
     if (connectedSession) {
       const fetchCommands = async () => {
         try {
+          console.log(`Fetching commands for session: ${connectedSession}`);
           const { data, error } = await supabase
             .from('session_commands')
             .select('*')
@@ -75,11 +76,15 @@ export const SupportView = () => {
             return;
           }
           
+          console.log("Fetched commands:", data);
+          
           if (data && data.length > 0) {
             const commandOutput = data.map(cmd => 
               cmd.sender === 'support' 
                 ? `Support sent: ${cmd.command}` 
-                : `User sent: ${cmd.command}`
+                : cmd.sender === 'user'
+                  ? `User sent: ${cmd.command}`
+                  : `Device response: ${cmd.command}`
             );
             setSerialOutput(commandOutput);
           }
@@ -99,16 +104,26 @@ export const SupportView = () => {
           table: 'session_commands',
           filter: `session_id=eq.${connectedSession}`
         }, (payload) => {
+          console.log("Real-time command update received:", payload);
           const newCommand = payload.new as any;
-          const formattedCommand = newCommand.sender === 'support'
-            ? `Support sent: ${newCommand.command}`
-            : `User sent: ${newCommand.command}`;
+          let formattedCommand = '';
+          
+          if (newCommand.sender === 'support') {
+            formattedCommand = `Support sent: ${newCommand.command}`;
+          } else if (newCommand.sender === 'user') {
+            formattedCommand = `User sent: ${newCommand.command}`;
+          } else if (newCommand.sender === 'device') {
+            formattedCommand = `Device response: ${newCommand.command}`;
+          }
             
           setSerialOutput(prev => [...prev, formattedCommand]);
         })
-        .subscribe();
+        .subscribe((status) => {
+          console.log(`Subscription status for session commands: ${status}`);
+        });
         
       return () => {
+        console.log("Cleaning up subscription");
         supabase.removeChannel(channel);
       };
     }
@@ -174,9 +189,6 @@ export const SupportView = () => {
 
   const disconnectSession = async () => {
     if (connectedSession) {
-      // Close the session in the database
-      await sessionService.closeSession(connectedSession);
-      
       setConnectedSession(null);
       setSerialOutput([]);
       
@@ -184,9 +196,6 @@ export const SupportView = () => {
         title: "Disconnected",
         description: "You have disconnected from the session",
       });
-      
-      // Refresh the sessions list immediately
-      await sessionService.forceRefreshFromDb();
     }
   };
 
@@ -220,6 +229,11 @@ export const SupportView = () => {
       
       // Clear the command input
       setCommand("");
+      
+      toast({
+        title: "Command Sent",
+        description: "Command was sent to the device",
+      });
     } catch (error) {
       console.error("Error in sendCommand:", error);
       toast({
@@ -327,6 +341,8 @@ export const SupportView = () => {
                         <span className="text-blue-400">{line}</span>
                       ) : line.startsWith("User sent:") ? (
                         <span className="text-yellow-400">{line}</span>
+                      ) : line.startsWith("Device response:") ? (
+                        <span className="text-green-400">{line}</span>
                       ) : (
                         <span>{line}</span>
                       )}

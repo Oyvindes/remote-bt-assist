@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import * as z from "zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import sessionService from "@/services/SessionService";
+import { supabase } from "@/integrations/supabase/client";
 
 const sessionFormSchema = z.object({
   sessionName: z.string().min(3, {
@@ -105,6 +107,41 @@ export const UserDeviceView = () => {
       bluetoothService.removeDataListener(handleSerialData);
     };
   }, []);
+  
+  // Listen for commands from support
+  useEffect(() => {
+    if (activeSession) {
+      // Subscribe to real-time updates for new commands
+      const channel = supabase
+        .channel('support-commands')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'session_commands',
+          filter: `session_id=eq.${activeSession.id} AND sender=eq.support`
+        }, async (payload) => {
+          console.log("Received support command:", payload);
+          const newCommand = payload.new as any;
+          
+          // Execute the command on the device
+          try {
+            await bluetoothService.sendCommand(newCommand.command);
+            setSerialOutput(prev => [...prev, `> [Support] ${newCommand.command}`]);
+          } catch (error) {
+            console.error("Error executing support command:", error);
+            setSerialOutput(prev => [...prev, `! Error executing support command: ${newCommand.command}`]);
+          }
+        })
+        .subscribe((status) => {
+          console.log(`Subscription status for support commands: ${status}`);
+        });
+        
+      return () => {
+        console.log("Cleaning up support command subscription");
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [activeSession]);
 
   const scanForDevices = async () => {
     try {
@@ -208,9 +245,12 @@ export const UserDeviceView = () => {
         deviceIdentifier
       );
       
-      const bluetoothSession = bluetoothService.shareDeviceSession(session.name);
+      const bluetoothSession = bluetoothService.shareDeviceSession(values.sessionName);
       
-      setActiveSession(bluetoothSession);
+      setActiveSession({
+        id: session.id,
+        name: session.name
+      });
       setIsSharingSession(true);
       setIsSessionDialogOpen(false);
       
@@ -535,7 +575,13 @@ export const UserDeviceView = () => {
                 serialOutput.map((line, index) => (
                   <div key={index} className="py-1">
                     {line.startsWith(">") ? (
-                      <span className="text-blue-400">{line}</span>
+                      line.includes("[Support]") ? (
+                        <span className="text-blue-400">{line}</span>
+                      ) : (
+                        <span className="text-yellow-400">{line}</span>
+                      )
+                    ) : line.startsWith("!") ? (
+                      <span className="text-red-400">{line}</span>
                     ) : (
                       <span>{line}</span>
                     )}
