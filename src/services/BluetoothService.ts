@@ -1,3 +1,4 @@
+
 // This is a mock service for demonstration purposes
 // For a real implementation, you would use the Web Bluetooth API
 // which is available in supported browsers
@@ -7,12 +8,20 @@ export interface BluetoothDevice {
   name: string;
 }
 
+export interface ShareSession {
+  id: string;
+  name: string;
+  deviceId: string;
+  deviceName: string;
+}
+
 class BluetoothService {
   private device: BluetoothDevice | null = null;
   private connected: boolean = false;
   private listeners: ((data: string) => void)[] = [];
   private availableDevices: BluetoothDevice[] = [];
   private isScanning: boolean = false;
+  private shareSession: ShareSession | null = null;
 
   async scanForDevices(timeout: number = 5000): Promise<BluetoothDevice[]> {
     // If already scanning, return current list
@@ -102,6 +111,7 @@ class BluetoothService {
   disconnect(): void {
     this.connected = false;
     this.device = null;
+    this.shareSession = null;
   }
 
   async sendCommand(command: string): Promise<void> {
@@ -147,6 +157,31 @@ class BluetoothService {
 
   getConnectedDevice(): BluetoothDevice | null {
     return this.device;
+  }
+
+  // Session sharing methods
+  shareDeviceSession(sessionName: string): ShareSession {
+    if (!this.device || !this.connected) {
+      throw new Error("No connected device to share");
+    }
+    
+    const session: ShareSession = {
+      id: Math.random().toString(36).substring(2, 10),
+      name: sessionName || `${this.device.name} Session`,
+      deviceId: this.device.id,
+      deviceName: this.device.name
+    };
+    
+    this.shareSession = session;
+    return session;
+  }
+  
+  getActiveShareSession(): ShareSession | null {
+    return this.shareSession;
+  }
+  
+  stopSharingSession(): void {
+    this.shareSession = null;
   }
 }
 

@@ -5,6 +5,7 @@
 
 export interface Session {
   id: string;
+  name: string;
   user: string;
   device: string;
   startTime: Date;
@@ -17,12 +18,14 @@ export interface Session {
 
 class SessionImpl implements Session {
   id: string;
+  name: string;
   user: string;
   device: string;
   startTime: Date;
   
-  constructor(id: string, user: string, device: string) {
+  constructor(id: string, name: string, user: string, device: string) {
     this.id = id;
+    this.name = name;
     this.user = user;
     this.device = device;
     this.startTime = new Date();
@@ -50,8 +53,8 @@ class SessionService {
   
   constructor() {
     // Create some mock sessions for demonstration
-    this.createSession("User 1", "BT Serial Module");
-    this.createSession("User 2", "HC-05 Module");
+    this.createSession("Arduino Temp Sensor", "User 1", "BT Serial Module");
+    this.createSession("Factory Reset HC-05", "User 2", "HC-05 Module");
     
     // Update session durations periodically
     setInterval(() => {
@@ -61,9 +64,9 @@ class SessionService {
     }, 60000); // Update every minute
   }
   
-  createSession(user: string, device: string): Session {
+  createSession(name: string, user: string, device: string): Session {
     const id = Math.random().toString(36).substring(2, 10);
-    const session = new SessionImpl(id, user, device);
+    const session = new SessionImpl(id, name, user, device);
     this.activeSessions.set(id, session);
     this.notifyListeners();
     return session;

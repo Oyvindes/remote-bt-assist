@@ -6,17 +6,41 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw } from "lucide-react";
-import bluetoothService, { BluetoothDevice } from "@/services/BluetoothService";
+import bluetoothService, { BluetoothDevice, ShareSession } from "@/services/BluetoothService";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+
+// Form schema for session naming
+const sessionFormSchema = z.object({
+  sessionName: z.string().min(3, {
+    message: "Session name must be at least 3 characters.",
+  }).max(30, {
+    message: "Session name must not be longer than 30 characters.",
+  }),
+});
 
 export const UserDeviceView = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [isSharingSession, setIsSharingSession] = useState(false);
+  const [activeSession, setActiveSession] = useState<ShareSession | null>(null);
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
   const [command, setCommand] = useState("");
   const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  // Initialize form
+  const form = useForm<z.infer<typeof sessionFormSchema>>({
+    resolver: zodResolver(sessionFormSchema),
+    defaultValues: {
+      sessionName: "",
+    },
+  });
 
   // Handle serial data updates
   useEffect(() => {
@@ -94,28 +118,48 @@ export const UserDeviceView = () => {
     setIsConnected(false);
     setDevice(null);
     setIsSharingSession(false);
+    setActiveSession(null);
     toast({
       title: "Disconnected",
       description: "Device has been disconnected",
     });
   };
 
-  const toggleShareSession = () => {
-    if (!isSharingSession) {
+  const openShareDialog = () => {
+    // Set a default session name based on the connected device
+    form.setValue("sessionName", device ? `${device.name} Session` : "My Session");
+    setIsSessionDialogOpen(true);
+  };
+
+  const onShareSessionSubmit = (values: z.infer<typeof sessionFormSchema>) => {
+    try {
+      const session = bluetoothService.shareDeviceSession(values.sessionName);
+      setActiveSession(session);
       setIsSharingSession(true);
-      // Generate a random session ID (in a real app, this would come from a backend)
-      const sessionId = Math.random().toString(36).substring(2, 10);
+      setIsSessionDialogOpen(false);
+      
       toast({
         title: "Session Shared",
-        description: `Session ID: ${sessionId}. A support agent can now connect to your device.`,
+        description: `Session ID: ${session.id}. A support agent can now connect to your device.`,
       });
-    } else {
-      setIsSharingSession(false);
+    } catch (error) {
       toast({
-        title: "Session Ended",
-        description: "Remote sharing has been stopped",
+        title: "Sharing Failed",
+        description: "Could not share device session",
+        variant: "destructive",
       });
     }
+  };
+
+  const stopSharingSession = () => {
+    bluetoothService.stopSharingSession();
+    setIsSharingSession(false);
+    setActiveSession(null);
+    
+    toast({
+      title: "Session Ended",
+      description: "Remote sharing has been stopped",
+    });
   };
 
   const sendCommand = async () => {
@@ -158,14 +202,25 @@ export const UserDeviceView = () => {
               </div>
               <div className="flex justify-between mt-2">
                 <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
-                <Button 
-                  variant={isSharingSession ? "destructive" : "default"}
-                  onClick={toggleShareSession}
-                  className="flex items-center gap-2"
-                >
-                  <Share2 className="h-4 w-4" />
-                  {isSharingSession ? "Stop Sharing" : "Share with Support"}
-                </Button>
+                {isSharingSession ? (
+                  <Button 
+                    variant="destructive"
+                    onClick={stopSharingSession}
+                    className="flex items-center gap-2"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Stop Sharing
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="default"
+                    onClick={openShareDialog}
+                    className="flex items-center gap-2"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share with Support
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
@@ -253,12 +308,53 @@ export const UserDeviceView = () => {
         </Card>
       )}
 
-      {isSharingSession && (
+      {isSharingSession && activeSession && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
-          <p className="font-medium">Session is currently being shared with support</p>
+          <p className="font-medium">Session "{activeSession.name}" is currently being shared with support</p>
+          <p className="text-sm mt-1">Session ID: {activeSession.id}</p>
           <p className="text-sm mt-1">All serial data is visible to the support agent</p>
         </div>
       )}
+
+      {/* Session naming dialog */}
+      <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Share with Support</DialogTitle>
+            <DialogDescription>
+              Name your session so support can easily identify your device
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onShareSessionSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="sessionName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Session Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="My Device Session" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Give your session a descriptive name.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsSessionDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Share Session</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
