@@ -115,9 +115,9 @@ class BluetoothService {
       await this.serialCharacteristic.startNotifications();
       
       // Add a listener for characteristic value changes
-      this.serialCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
-        // Fix the type conversion issue by asserting the event target correctly
-        const target = event.target as BluetoothRemoteGATTCharacteristic;
+      this.serialCharacteristic.addEventListener('characteristicvaluechanged', (event: Event) => {
+        // Properly cast the event target with an intermediate 'unknown' cast for type safety
+        const target = (event.target as unknown) as BluetoothRemoteGATTCharacteristic;
         if (target && target.value) {
           const decoder = new TextDecoder('utf-8');
           const value = decoder.decode(target.value);
