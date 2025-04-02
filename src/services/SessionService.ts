@@ -1,7 +1,6 @@
 
-// This is a mock service for demonstration purposes
-// In a real implementation, this would use WebRTC, WebSockets,
-// or a backend service to facilitate communication
+// This service facilitates session management for remote support
+// In a production environment, this would integrate with a backend service
 
 export interface Session {
   id: string;
@@ -52,10 +51,6 @@ class SessionService {
   private listeners: ((sessions: Session[]) => void)[] = [];
   
   constructor() {
-    // Create some mock sessions for demonstration
-    this.createSession("Arduino Temp Sensor", "User 1", "BT Serial Module");
-    this.createSession("Factory Reset HC-05", "User 2", "HC-05 Module");
-    
     // Update session durations periodically
     setInterval(() => {
       if (this.activeSessions.size > 0) {

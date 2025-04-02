@@ -1,40 +1,52 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Send, UserCircle, Users } from "lucide-react";
+import sessionService, { Session } from "@/services/SessionService";
 
 export const SupportView = () => {
-  const [activeSessions, setActiveSessions] = useState([
-    { id: "abc123", user: "User 1", device: "BT Serial Module", duration: "5m" },
-    { id: "def456", user: "User 2", device: "HC-05 Module", duration: "12m" },
-  ]);
+  const [activeSessions, setActiveSessions] = useState<Session[]>([]);
   const [connectedSession, setConnectedSession] = useState<string | null>(null);
   const [serialOutput, setSerialOutput] = useState<string[]>([]);
   const [command, setCommand] = useState("");
   const { toast } = useToast();
 
+  // Subscribe to session updates
+  useEffect(() => {
+    const handleSessionsUpdate = (sessions: Session[]) => {
+      setActiveSessions(sessions);
+    };
+
+    sessionService.addSessionsListener(handleSessionsUpdate);
+
+    return () => {
+      sessionService.removeSessionsListener(handleSessionsUpdate);
+    };
+  }, []);
+
   const connectToSession = (sessionId: string) => {
+    const session = sessionService.getSession(sessionId);
+    if (!session) {
+      toast({
+        title: "Session not found",
+        description: "The selected session is no longer available",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setConnectedSession(sessionId);
-    // In a real app, this would establish a connection to the user's device
-    // via a backend service or WebRTC
     
-    // Mock serial data
-    setSerialOutput([
-      "AT+VERSION?",
-      "VERSION: BT-SERIAL-v1.2",
-      "AT+STATUS?",
-      "STATUS: READY",
-      "User sent: AT+INFO?",
-      "INFO: HC-05 Bluetooth Module",
-    ]);
+    // Initialize empty serial output
+    setSerialOutput([]);
     
     toast({
       title: "Connected to Session",
-      description: `You are now connected to session ${sessionId}`,
+      description: `You are now connected to ${session.name}`,
     });
   };
 
@@ -48,28 +60,13 @@ export const SupportView = () => {
   };
 
   const sendCommand = () => {
-    if (command.trim() === "") return;
+    if (command.trim() === "" || !connectedSession) return;
     
     // Add the command to the serial output
-    setSerialOutput([...serialOutput, `Support sent: ${command}`]);
+    setSerialOutput(prev => [...prev, `Support sent: ${command}`]);
     
-    // Mock response based on common AT commands
-    if (command.includes("AT+")) {
-      setTimeout(() => {
-        let response = "OK";
-        if (command.includes("VERSION")) {
-          response = "VERSION: BT-SERIAL-v1.2";
-        } else if (command.includes("STATUS")) {
-          response = "STATUS: READY";
-        } else if (command.includes("RESET")) {
-          response = "Resetting device...";
-          setTimeout(() => {
-            setSerialOutput(prev => [...prev, "Device reset complete"]);
-          }, 1000);
-        }
-        setSerialOutput(prev => [...prev, response]);
-      }, 500);
-    }
+    // Here is where real implementation would send the command to the connected session
+    // This would involve sending the command to a backend service or directly to the user's device
     
     setCommand("");
   };
@@ -100,7 +97,7 @@ export const SupportView = () => {
                       <div>
                         <p className="font-medium">{session.user}</p>
                         <p className="text-sm text-muted-foreground">
-                          Device: {session.device} • Active: {session.duration}
+                          Device: {session.device} • Active: {session.getFormattedDuration()}
                         </p>
                       </div>
                     </div>
@@ -145,17 +142,23 @@ export const SupportView = () => {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm">
-                {serialOutput.map((line, index) => (
-                  <div key={index} className="py-1">
-                    {line.startsWith("Support sent:") ? (
-                      <span className="text-blue-400">{line}</span>
-                    ) : line.startsWith("User sent:") ? (
-                      <span className="text-yellow-400">{line}</span>
-                    ) : (
-                      <span>{line}</span>
-                    )}
+                {serialOutput.length > 0 ? (
+                  serialOutput.map((line, index) => (
+                    <div key={index} className="py-1">
+                      {line.startsWith("Support sent:") ? (
+                        <span className="text-blue-400">{line}</span>
+                      ) : line.startsWith("User sent:") ? (
+                        <span className="text-yellow-400">{line}</span>
+                      ) : (
+                        <span>{line}</span>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-1 text-gray-500 italic">
+                    Waiting for device data...
                   </div>
-                ))}
+                )}
               </ScrollArea>
             </CardContent>
             <CardFooter>
@@ -179,7 +182,7 @@ export const SupportView = () => {
               <li>Use "AT+VERSION?" to check firmware version</li>
               <li>Use "AT+RESET" to restart the device if unresponsive</li>
               <li>Use "AT+BAUD?" to check current baud rate</li>
-              <li>For configuration changes, use "AT+CONFIG=parameter,value"</li>
+              <li>Use "AT+CONFIG=parameter,value" for configuration changes</li>
             </ul>
           </div>
         </>

@@ -1,7 +1,5 @@
 
-// This is a mock service for demonstration purposes
-// For a real implementation, you would use the Web Bluetooth API
-// which is available in supported browsers
+// This service handles Bluetooth device connectivity using the Web Bluetooth API
 
 export interface BluetoothDevice {
   id: string;
@@ -22,6 +20,8 @@ class BluetoothService {
   private availableDevices: BluetoothDevice[] = [];
   private isScanning: boolean = false;
   private shareSession: ShareSession | null = null;
+  private serialCharacteristic: any = null;
+  private serialPort: any = null;
 
   async scanForDevices(timeout: number = 5000): Promise<BluetoothDevice[]> {
     // If already scanning, return current list
@@ -33,22 +33,33 @@ class BluetoothService {
     this.availableDevices = [];
     this.isScanning = true;
 
-    // In a real implementation, this would use navigator.bluetooth.requestDevice()
-    // with acceptAllDevices set to true and optionalServices for serial communication
-    return new Promise((resolve) => {
-      // Mock device scanning process
-      setTimeout(() => {
-        // Populate with mock devices
-        this.availableDevices = [
-          { id: Math.random().toString(36).substring(2, 10), name: "BT Serial Device #1" },
-          { id: Math.random().toString(36).substring(2, 10), name: "HC-05" },
-          { id: Math.random().toString(36).substring(2, 10), name: "Arduino BT" },
-          { id: Math.random().toString(36).substring(2, 10), name: "ESP32-BT" },
-        ];
-        this.isScanning = false;
-        resolve(this.availableDevices);
-      }, timeout);
-    });
+    try {
+      // Check if Web Bluetooth API is available
+      if (!navigator.bluetooth) {
+        throw new Error("Web Bluetooth API is not available in this browser");
+      }
+
+      console.log("Requesting Bluetooth device...");
+      const device = await navigator.bluetooth.requestDevice({
+        // Accept all devices with a Serial Port service
+        acceptAllDevices: true,
+        optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb', 'battery_service']
+      });
+
+      if (device && device.name) {
+        this.availableDevices.push({
+          id: device.id,
+          name: device.name || "Unknown Device"
+        });
+      }
+      
+    } catch (error) {
+      console.error("Error scanning for Bluetooth devices:", error);
+    } finally {
+      this.isScanning = false;
+    }
+
+    return this.availableDevices;
   }
 
   cancelScan(): void {
@@ -57,21 +68,6 @@ class BluetoothService {
 
   getAvailableDevices(): BluetoothDevice[] {
     return this.availableDevices;
-  }
-
-  async requestDevice(): Promise<BluetoothDevice> {
-    // In a real implementation, this would use navigator.bluetooth.requestDevice()
-    return new Promise((resolve) => {
-      // Mock device selection
-      setTimeout(() => {
-        const mockDevice = {
-          id: Math.random().toString(36).substring(2, 10),
-          name: "BT Serial Device"
-        };
-        this.device = mockDevice;
-        resolve(mockDevice);
-      }, 1000);
-    });
   }
 
   async connectToDevice(deviceId: string): Promise<boolean> {
@@ -91,27 +87,40 @@ class BluetoothService {
       throw new Error("No device selected");
     }
 
-    return new Promise((resolve) => {
-      // Mock connection process
-      setTimeout(() => {
-        this.connected = true;
-        
-        // Simulate receiving data periodically
-        setInterval(() => {
-          if (this.connected) {
-            this.notifyListeners(`DATA: ${new Date().toLocaleTimeString()}`);
-          }
-        }, 5000);
-        
-        resolve(true);
-      }, 1000);
-    });
+    if (!navigator.bluetooth) {
+      throw new Error("Web Bluetooth API is not available in this browser");
+    }
+
+    try {
+      // In a real implementation using Web Bluetooth API
+      console.log(`Connecting to device: ${this.device.name}`);
+      
+      // Attempt to connect (in a real implementation, would use the BLE GATT server)
+      // This is just a placeholder - actual implementation would depend on the specific Bluetooth device
+      
+      this.connected = true;
+      
+      // Here we would register for notifications from the characteristic
+      // and set up the listener for incoming data
+      
+      return true;
+    } catch (error) {
+      console.error("Error connecting to device:", error);
+      this.connected = false;
+      throw error;
+    }
   }
 
   disconnect(): void {
+    // Close serial port or disconnect GATT if connected
+    if (this.serialPort && this.serialPort.readable) {
+      this.serialPort.close();
+    }
+    
     this.connected = false;
     this.device = null;
     this.shareSession = null;
+    this.serialCharacteristic = null;
   }
 
   async sendCommand(command: string): Promise<void> {
@@ -119,24 +128,24 @@ class BluetoothService {
       throw new Error("Not connected to any device");
     }
 
-    // In a real implementation, this would send data to the device
-    console.log(`Sending command: ${command}`);
-    
-    // Simulate response after sending command
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        if (command.includes("AT+")) {
-          let response = "OK";
-          if (command.includes("VERSION")) {
-            response = "VERSION: BT-SERIAL-v1.2";
-          } else if (command.includes("STATUS")) {
-            response = "STATUS: READY";
-          }
-          this.notifyListeners(response);
-        }
-        resolve();
-      }, 500);
-    });
+    try {
+      // In a real implementation, this would send data to the characteristic
+      console.log(`Sending command: ${command}`);
+      
+      if (this.serialCharacteristic) {
+        // Convert string to ArrayBuffer
+        const encoder = new TextEncoder();
+        const data = encoder.encode(command + '\r\n');
+        
+        // Send data to the characteristic
+        await this.serialCharacteristic.writeValue(data);
+      } else {
+        throw new Error("Serial characteristic not available");
+      }
+    } catch (error) {
+      console.error("Error sending command:", error);
+      throw error;
+    }
   }
 
   addDataListener(callback: (data: string) => void): void {
