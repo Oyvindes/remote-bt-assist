@@ -53,6 +53,7 @@ class BluetoothService {
   };
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private scannedDevices: BluetoothDevice[] = []; // Store devices from scan to use during connect
+  private isConnectionActive = false; // Track active connection state
 
   // Helper to categorize Bluetooth errors
   private parseBluetoothError(error: any): BluetoothError {
@@ -116,6 +117,18 @@ class BluetoothService {
         message: 'This browser does not fully support the Web Bluetooth API',
         originalError: error instanceof Error ? error : undefined
       };
+    } else if (errorMessage.includes('No device connected')) {
+      errorInfo = {
+        type: 'device-disconnected',
+        message: 'No Bluetooth device is connected',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('characteristic not available')) {
+      errorInfo = {
+        type: 'characteristic-not-found',
+        message: 'Required Bluetooth characteristic not available',
+        originalError: error instanceof Error ? error : undefined
+      };
     }
     
     return errorInfo;
@@ -145,7 +158,11 @@ class BluetoothService {
           { namePrefix: 'HC-' }, // Common prefix for HC-05, HC-06
           { namePrefix: 'BT' }, // Common prefix for Bluetooth modules
         ],
-        optionalServices: ['generic_access', '0000ffe0-0000-1000-8000-00805f9b34fb']
+        optionalServices: [
+          'generic_access', 
+          '0000ffe0-0000-1000-8000-00805f9b34fb',
+          '0000ffe1-0000-1000-8000-00805f9b34fb'
+        ]
       });
 
       if (device) {
@@ -188,6 +205,9 @@ class BluetoothService {
       if (!server) {
         throw new Error("Failed to connect to GATT server");
       }
+
+      // Set connection as active
+      this.isConnectionActive = true;
 
       // Discover serial service (common UUID for BLE Serial services)
       // We'll try with the common HC-05/HC-06 service UUID first
@@ -239,8 +259,41 @@ class BluetoothService {
       
       console.log(`Successfully connected to ${this.connectedDevice.name}`);
     } catch (error) {
+      this.isConnectionActive = false;
+      this.characteristic = null;
       console.error("Error connecting to Bluetooth device:", error);
       throw this.parseBluetoothError(error);
+    }
+  }
+
+  // Check connection state more reliably
+  async verifyConnection(): Promise<boolean> {
+    if (!this.isConnectionActive || !this.connectedDevice?.device?.gatt) {
+      return false;
+    }
+    
+    try {
+      // Test if the device is still connected
+      const connected = this.connectedDevice.device.gatt.connected;
+      if (!connected) {
+        this.isConnectionActive = false;
+        this.characteristic = null;
+        return false;
+      }
+      
+      // Verify characteristic is still valid
+      if (!this.characteristic) {
+        console.warn("Characteristic is null but device is connected");
+        this.isConnectionActive = false;
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error verifying connection:", error);
+      this.isConnectionActive = false;
+      this.characteristic = null;
+      return false;
     }
   }
 
@@ -259,12 +312,15 @@ class BluetoothService {
       this.characteristic = null;
     }
     
+    this.isConnectionActive = false;
     this.connectedDevice = null;
     console.log("Disconnected from device");
   }
 
   isConnected(): boolean {
-    return !!this.connectedDevice?.device?.gatt?.connected;
+    return this.isConnectionActive && 
+           !!this.connectedDevice?.device?.gatt?.connected && 
+           !!this.characteristic;
   }
 
   getConnectedDevice(): BluetoothDevice | null {
@@ -273,7 +329,10 @@ class BluetoothService {
 
   // Send command to the connected device
   async sendCommand(command: string): Promise<void> {
-    if (!this.isConnected() || !this.characteristic) {
+    // Verify connection is still active before sending
+    const isConnected = await this.verifyConnection();
+    
+    if (!isConnected || !this.characteristic) {
       throw this.parseBluetoothError(new Error("No device connected or characteristic not available"));
     }
 
@@ -284,6 +343,11 @@ class BluetoothService {
       console.log(`Command sent: ${command}`);
     } catch (error) {
       console.error("Error sending command:", error);
+      // Reset connection state on error
+      if (error instanceof Error && error.message.includes('GATT Server is disconnected')) {
+        this.isConnectionActive = false;
+        this.characteristic = null;
+      }
       throw this.parseBluetoothError(error);
     }
   }

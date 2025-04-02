@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,7 @@ export const UserDeviceView = () => {
   const [command, setCommand] = useState("");
   const [availableDevices, setAvailableDevices] = useState<BluetoothDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
   const [bluetoothError, setBluetoothError] = useState<BluetoothError | null>(null);
@@ -64,6 +66,31 @@ export const UserDeviceView = () => {
     },
   });
 
+  // Periodic connection check
+  useEffect(() => {
+    let connectionCheckInterval: NodeJS.Timeout;
+    
+    if (isConnected) {
+      connectionCheckInterval = setInterval(async () => {
+        const stillConnected = await bluetoothService.verifyConnection();
+        if (!stillConnected && isConnected) {
+          setIsConnected(false);
+          toast({
+            title: "Device Disconnected",
+            description: "The Bluetooth connection was lost",
+            variant: "destructive",
+          });
+        }
+      }, 5000);
+    }
+    
+    return () => {
+      if (connectionCheckInterval) {
+        clearInterval(connectionCheckInterval);
+      }
+    };
+  }, [isConnected, toast]);
+
   useEffect(() => {
     const config = bluetoothService.getSerialConfig();
     serialConfigForm.reset(config);
@@ -72,6 +99,7 @@ export const UserDeviceView = () => {
   useEffect(() => {
     const handleSerialData = (data: string) => {
       setSerialOutput(prev => [...prev, data]);
+      console.log("Received data:", data);
     };
 
     bluetoothService.addDataListener(handleSerialData);
@@ -208,20 +236,48 @@ export const UserDeviceView = () => {
     if (command.trim() === "") return;
     
     setSerialOutput(prev => [...prev, `> ${command}`]);
+    setIsSending(true);
     
     try {
+      // Check connection before trying to send
+      const connected = await bluetoothService.verifyConnection();
+      if (!connected) {
+        setIsConnected(false);
+        throw new Error("Device is no longer connected");
+      }
+      
       await bluetoothService.sendCommand(command);
+      
+      // Success notification
+      toast({
+        title: "Command Sent",
+        description: "Command was sent to the device",
+      });
     } catch (error) {
       console.error("Command error:", error);
       
+      // Update connection status if device is disconnected
+      if ('type' in error && (error as BluetoothError).type === 'device-disconnected') {
+        setIsConnected(false);
+      }
+      
+      // Show error toast with more detailed message
+      let errorMessage = "Could not send command to the device";
+      if ('type' in error) {
+        const btError = error as BluetoothError;
+        errorMessage = btError.message;
+        setBluetoothError(btError);
+      }
+      
       toast({
         title: "Command Failed",
-        description: "Could not send command to the device",
+        description: errorMessage,
         variant: "destructive",
       });
+    } finally {
+      setIsSending(false);
+      setCommand("");
     }
-    
-    setCommand("");
   };
 
   const openSerialConfigDialog = () => {
@@ -283,6 +339,35 @@ export const UserDeviceView = () => {
     setBluetoothError(null);
   };
 
+  // Function to reconnect if the device appears to be disconnected
+  const reconnectDevice = async () => {
+    if (!device) return;
+    
+    try {
+      toast({
+        title: "Reconnecting...",
+        description: "Attempting to reconnect to the device",
+      });
+      
+      await bluetoothService.connectToDevice(device.id);
+      setIsConnected(true);
+      setBluetoothError(null);
+      
+      toast({
+        title: "Reconnected!",
+        description: "Successfully reconnected to your Bluetooth device",
+      });
+    } catch (error) {
+      console.error("Reconnection error:", error);
+      
+      toast({
+        title: "Reconnection Failed",
+        description: "Could not reconnect to the device",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {bluetoothError && (
@@ -291,14 +376,24 @@ export const UserDeviceView = () => {
           <AlertTitle>{bluetoothError.message}</AlertTitle>
           <AlertDescription>
             <p className="mt-2">{getErrorGuidance(bluetoothError)}</p>
-            <Button 
-              variant="outline" 
-              className="mt-4" 
-              size="sm"
-              onClick={clearError}
-            >
-              Dismiss
-            </Button>
+            <div className="flex gap-2 mt-4">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={clearError}
+              >
+                Dismiss
+              </Button>
+              {bluetoothError.type === 'device-disconnected' && device && (
+                <Button 
+                  variant="default" 
+                  size="sm"
+                  onClick={reconnectDevice}
+                >
+                  Attempt Reconnect
+                </Button>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
       )}
@@ -421,15 +516,21 @@ export const UserDeviceView = () => {
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm">
-              {serialOutput.map((line, index) => (
-                <div key={index} className="py-1">
-                  {line.startsWith(">") ? (
-                    <span className="text-blue-400">{line}</span>
-                  ) : (
-                    <span>{line}</span>
-                  )}
+              {serialOutput.length > 0 ? (
+                serialOutput.map((line, index) => (
+                  <div key={index} className="py-1">
+                    {line.startsWith(">") ? (
+                      <span className="text-blue-400">{line}</span>
+                    ) : (
+                      <span>{line}</span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-500 italic">
+                  No data received yet. Try sending a command below.
                 </div>
-              ))}
+              )}
             </ScrollArea>
           </CardContent>
           <CardFooter>
@@ -439,9 +540,17 @@ export const UserDeviceView = () => {
                 onChange={(e) => setCommand(e.target.value)}
                 placeholder="Enter AT command..."
                 onKeyDown={(e) => e.key === "Enter" && sendCommand()}
+                disabled={isSending}
               />
-              <Button onClick={sendCommand}>
-                <Send className="h-4 w-4" />
+              <Button 
+                onClick={sendCommand} 
+                disabled={isSending || !command.trim()}
+              >
+                {isSending ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </CardFooter>
