@@ -1,4 +1,3 @@
-
 import sessionService from './SessionService';
 
 export interface BluetoothDevice {
@@ -20,6 +19,26 @@ export interface ShareSession {
   name: string;
 }
 
+// Error types to provide more specific information about Bluetooth errors
+export type BluetoothErrorType = 
+  | 'not-supported' 
+  | 'user-cancelled' 
+  | 'security-error'
+  | 'connection-failed'
+  | 'device-disconnected'
+  | 'permission-denied'
+  | 'service-not-found'
+  | 'characteristic-not-found'
+  | 'write-failed'
+  | 'notification-failed'
+  | 'unknown';
+
+export interface BluetoothError {
+  type: BluetoothErrorType;
+  message: string;
+  originalError?: Error;
+}
+
 class BluetoothService {
   private connectedDevice: BluetoothDevice | null = null;
   private dataListeners: ((data: string) => void)[] = [];
@@ -33,6 +52,67 @@ class BluetoothService {
   };
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
 
+  // Helper to categorize Bluetooth errors
+  private parseBluetoothError(error: any): BluetoothError {
+    console.error("Bluetooth error:", error);
+    
+    // Default unknown error
+    let errorInfo: BluetoothError = {
+      type: 'unknown',
+      message: 'An unknown error occurred',
+      originalError: error instanceof Error ? error : undefined
+    };
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Check for specific error types
+    if (errorMessage.includes('User cancelled')) {
+      errorInfo = {
+        type: 'user-cancelled',
+        message: 'Operation was cancelled by the user',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('Bluetooth adapter is not available')) {
+      errorInfo = {
+        type: 'not-supported',
+        message: 'Bluetooth is not available on this device or browser',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('GATT Server is disconnected')) {
+      errorInfo = {
+        type: 'device-disconnected',
+        message: 'The Bluetooth device was disconnected',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('no such service')) {
+      errorInfo = {
+        type: 'service-not-found',
+        message: 'Required Bluetooth service not found on this device',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('SecurityError') || errorMessage.includes('secure context')) {
+      errorInfo = {
+        type: 'security-error',
+        message: 'Bluetooth access requires a secure context (HTTPS)',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
+      errorInfo = {
+        type: 'permission-denied',
+        message: 'Permission to access Bluetooth was denied',
+        originalError: error instanceof Error ? error : undefined
+      };
+    } else if (errorMessage.includes('Failed to connect')) {
+      errorInfo = {
+        type: 'connection-failed',
+        message: 'Failed to connect to the Bluetooth device',
+        originalError: error instanceof Error ? error : undefined
+      };
+    }
+    
+    return errorInfo;
+  }
+
   // Check if Web Bluetooth API is available
   isWebBluetoothAvailable(): boolean {
     return typeof navigator !== 'undefined' && 
@@ -43,15 +123,21 @@ class BluetoothService {
   async scanForDevices(): Promise<BluetoothDevice[]> {
     if (!this.isWebBluetoothAvailable()) {
       console.error("Web Bluetooth API is not available in this browser/environment");
-      return [];
+      throw this.parseBluetoothError(new Error("Web Bluetooth API is not available in this browser/environment"));
     }
 
     try {
       console.log("Requesting Bluetooth device...");
       const device = await navigator.bluetooth.requestDevice({
-        // Accept all devices that have a Generic Access service
-        acceptAllDevices: true,
-        optionalServices: ['generic_access', '0000ffe0-0000-1000-8000-00805f9b34fb'] // Common UUID for HC-05, HC-06
+        // Accept all devices that have a Serial Port Profile service
+        filters: [
+          { services: ['0000ffe0-0000-1000-8000-00805f9b34fb'] }, // HC-05/HC-06 service UUID
+          { services: ['0000180a-0000-1000-8000-00805f9b34fb'] }, // Device Information Service
+          { services: ['0000180f-0000-1000-8000-00805f9b34fb'] }, // Battery Service
+          { namePrefix: 'HC-' }, // Common prefix for HC-05, HC-06
+          { namePrefix: 'BT' }, // Common prefix for Bluetooth modules
+        ],
+        optionalServices: ['generic_access', '0000ffe0-0000-1000-8000-00805f9b34fb']
       });
 
       if (device) {
@@ -64,26 +150,25 @@ class BluetoothService {
       return [];
     } catch (error) {
       console.error("Error scanning for Bluetooth devices:", error);
-      return [];
+      throw this.parseBluetoothError(error);
     }
   }
 
   // Connect to a selected Bluetooth device
   async connectToDevice(deviceId: string): Promise<void> {
     if (!this.isWebBluetoothAvailable()) {
-      throw new Error("Web Bluetooth API is not available in this browser/environment");
-    }
-
-    // Find the device with matching ID from the available devices
-    // In a real app, you might want to store the available devices after scanning
-    const devices = await navigator.bluetooth.getDevices();
-    const matchingDevice = devices.find(d => d.id === deviceId);
-
-    if (!matchingDevice) {
-      throw new Error(`Device with ID ${deviceId} not found`);
+      throw this.parseBluetoothError(new Error("Web Bluetooth API is not available in this browser/environment"));
     }
 
     try {
+      // Find the device with matching ID from the available devices
+      const devices = await navigator.bluetooth.getDevices();
+      const matchingDevice = devices.find(d => d.id === deviceId);
+
+      if (!matchingDevice) {
+        throw new Error(`Device with ID ${deviceId} not found`);
+      }
+
       console.log(`Connecting to device: ${deviceId}`);
       
       // Connect to the GATT server
@@ -93,26 +178,49 @@ class BluetoothService {
       }
 
       // Discover serial service (common UUID for BLE Serial services)
-      // This might differ depending on your specific Bluetooth device
-      const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+      // We'll try with the common HC-05/HC-06 service UUID first
+      let service;
+      try {
+        service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+      } catch (error) {
+        console.warn("Could not find HC-05/HC-06 service, trying generic access:", error);
+        try {
+          // Try to find the generic access service as fallback
+          service = await server.getPrimaryService('generic_access');
+        } catch (fallbackError) {
+          console.error("Could not find any compatible service:", fallbackError);
+          throw new Error("No compatible Bluetooth service found on this device");
+        }
+      }
       
       // Get the characteristic for serial communication
-      const characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+      let characteristic;
+      try {
+        characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+      } catch (error) {
+        console.error("Could not find characteristic:", error);
+        throw new Error("Bluetooth characteristic not found");
+      }
       
       // Store the characteristic for later use
       this.characteristic = characteristic;
       
       // Set up notifications for incoming data
-      await characteristic.startNotifications();
-      characteristic.addEventListener('characteristicvaluechanged', (event) => {
-        // Fix for TypeScript error: Cast event.target to unknown first, then to BluetoothRemoteGATTCharacteristic
-        const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
-        if (target.value) {
-          const decoder = new TextDecoder('utf-8');
-          const data = decoder.decode(target.value);
-          this.notifyDataListeners(data);
-        }
-      });
+      try {
+        await characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', (event) => {
+          // Fix for TypeScript error: Cast event.target to unknown first, then to BluetoothRemoteGATTCharacteristic
+          const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
+          if (target.value) {
+            const decoder = new TextDecoder('utf-8');
+            const data = decoder.decode(target.value);
+            this.notifyDataListeners(data);
+          }
+        });
+      } catch (error) {
+        console.error("Failed to set up notifications:", error);
+        throw new Error("Failed to set up device notifications");
+      }
 
       // Store the connected device
       this.connectedDevice = {
@@ -124,7 +232,7 @@ class BluetoothService {
       console.log(`Successfully connected to ${this.connectedDevice.name}`);
     } catch (error) {
       console.error("Error connecting to Bluetooth device:", error);
-      throw new Error(`Failed to connect: ${error instanceof Error ? error.message : String(error)}`);
+      throw this.parseBluetoothError(error);
     }
   }
 
@@ -158,7 +266,7 @@ class BluetoothService {
   // Send command to the connected device
   async sendCommand(command: string): Promise<void> {
     if (!this.isConnected() || !this.characteristic) {
-      throw new Error("No device connected or characteristic not available");
+      throw this.parseBluetoothError(new Error("No device connected or characteristic not available"));
     }
 
     try {
@@ -168,7 +276,7 @@ class BluetoothService {
       console.log(`Command sent: ${command}`);
     } catch (error) {
       console.error("Error sending command:", error);
-      throw new Error(`Failed to send command: ${error instanceof Error ? error.message : String(error)}`);
+      throw this.parseBluetoothError(error);
     }
   }
 

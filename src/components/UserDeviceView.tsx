@@ -4,14 +4,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings } from "lucide-react";
-import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig } from "@/services/BluetoothService";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle } from "lucide-react";
+import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig, BluetoothError } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Form schema for session naming
 const sessionFormSchema = z.object({
@@ -42,9 +43,9 @@ export const UserDeviceView = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
   const [isSerialConfigDialogOpen, setIsSerialConfigDialogOpen] = useState(false);
+  const [bluetoothError, setBluetoothError] = useState<BluetoothError | null>(null);
   const { toast } = useToast();
 
-  // Initialize forms
   const sessionForm = useForm<z.infer<typeof sessionFormSchema>>({
     resolver: zodResolver(sessionFormSchema),
     defaultValues: {
@@ -63,13 +64,11 @@ export const UserDeviceView = () => {
     },
   });
 
-  // Load initial serial config
   useEffect(() => {
     const config = bluetoothService.getSerialConfig();
     serialConfigForm.reset(config);
   }, []);
 
-  // Handle serial data updates
   useEffect(() => {
     const handleSerialData = (data: string) => {
       setSerialOutput(prev => [...prev, data]);
@@ -85,6 +84,8 @@ export const UserDeviceView = () => {
   const scanForDevices = async () => {
     try {
       setIsScanning(true);
+      setBluetoothError(null);
+      
       toast({
         title: "Scanning for devices...",
         description: "Please wait while we search for nearby Bluetooth devices",
@@ -98,6 +99,16 @@ export const UserDeviceView = () => {
         description: `Found ${devices.length} Bluetooth devices`,
       });
     } catch (error) {
+      console.error("Scan error:", error);
+      if ('type' in error) {
+        setBluetoothError(error as BluetoothError);
+      } else {
+        setBluetoothError({
+          type: 'unknown',
+          message: 'Failed to scan for devices',
+        });
+      }
+      
       toast({
         title: "Scan Failed",
         description: "Could not scan for Bluetooth devices",
@@ -110,8 +121,8 @@ export const UserDeviceView = () => {
 
   const connectToDevice = async (deviceId: string) => {
     try {
-      // Clear existing serial output when connecting to a new device
       setSerialOutput([]);
+      setBluetoothError(null);
       
       toast({
         title: "Connecting to device...",
@@ -127,6 +138,16 @@ export const UserDeviceView = () => {
         description: "Successfully connected to your Bluetooth device",
       });
     } catch (error) {
+      console.error("Connection error:", error);
+      if ('type' in error) {
+        setBluetoothError(error as BluetoothError);
+      } else {
+        setBluetoothError({
+          type: 'connection-failed',
+          message: 'Failed to connect to device',
+        });
+      }
+      
       toast({
         title: "Connection Failed",
         description: "Could not connect to Bluetooth device",
@@ -148,7 +169,6 @@ export const UserDeviceView = () => {
   };
 
   const openShareDialog = () => {
-    // Set a default session name based on the connected device
     sessionForm.setValue("sessionName", device ? `${device.name} Session` : "My Session");
     setIsSessionDialogOpen(true);
   };
@@ -187,12 +207,13 @@ export const UserDeviceView = () => {
   const sendCommand = async () => {
     if (command.trim() === "") return;
     
-    // Add the command to the serial output
     setSerialOutput(prev => [...prev, `> ${command}`]);
     
     try {
       await bluetoothService.sendCommand(command);
     } catch (error) {
+      console.error("Command error:", error);
+      
       toast({
         title: "Command Failed",
         description: "Could not send command to the device",
@@ -211,7 +232,6 @@ export const UserDeviceView = () => {
 
   const onSerialConfigSubmit = (values: z.infer<typeof serialConfigFormSchema>) => {
     try {
-      // Ensure all required fields are present by creating a complete SerialConfig object
       const serialConfig: SerialConfig = {
         baudRate: values.baudRate,
         dataBits: values.dataBits,
@@ -236,8 +256,53 @@ export const UserDeviceView = () => {
     }
   };
 
+  const getErrorGuidance = (error: BluetoothError): string => {
+    switch (error.type) {
+      case 'not-supported':
+        return "Try using a browser that supports Web Bluetooth (Chrome, Edge, or Opera) on a compatible device.";
+      case 'security-error':
+        return "Web Bluetooth requires a secure connection (HTTPS) and works only on trusted sites.";
+      case 'user-cancelled':
+        return "You cancelled the Bluetooth operation. Please try again if this was not intentional.";
+      case 'permission-denied':
+        return "Please allow Bluetooth permissions when prompted by your browser.";
+      case 'service-not-found':
+        return "This device doesn't provide the required Bluetooth services. Make sure you're connecting to a compatible device.";
+      case 'characteristic-not-found':
+        return "The device doesn't support the expected communications protocol. Check device compatibility.";
+      case 'connection-failed':
+        return "Make sure your Bluetooth device is powered on, in range, and in pairing mode.";
+      case 'device-disconnected':
+        return "The device was disconnected. Check if it's still powered on and in range.";
+      default:
+        return "Try restarting your Bluetooth device, refresh the page, or try a different browser.";
+    }
+  };
+
+  const clearError = () => {
+    setBluetoothError(null);
+  };
+
   return (
     <div className="space-y-4">
+      {bluetoothError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{bluetoothError.message}</AlertTitle>
+          <AlertDescription>
+            <p className="mt-2">{getErrorGuidance(bluetoothError)}</p>
+            <Button 
+              variant="outline" 
+              className="mt-4" 
+              size="sm"
+              onClick={clearError}
+            >
+              Dismiss
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -249,89 +314,99 @@ export const UserDeviceView = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isConnected ? (
-            <div className="flex flex-col gap-2">
-              <div className="bg-green-50 text-green-700 p-3 rounded-md flex items-center gap-2">
-                <Bluetooth className="h-4 w-4" />
-                <p>Connected to: {device?.name}</p>
+          {bluetoothService.isWebBluetoothAvailable() ? (
+            isConnected ? (
+              <div className="flex flex-col gap-2">
+                <div className="bg-green-50 text-green-700 p-3 rounded-md flex items-center gap-2">
+                  <Bluetooth className="h-4 w-4" />
+                  <p>Connected to: {device?.name}</p>
+                </div>
+                <div className="flex justify-between mt-2">
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={openSerialConfigDialog}
+                      className="flex items-center gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Serial Config
+                    </Button>
+                  </div>
+                  {isSharingSession ? (
+                    <Button 
+                      variant="destructive"
+                      onClick={stopSharingSession}
+                      className="flex items-center gap-2"
+                    >
+                      <Share2 className="h-4 w-4" />
+                      Stop Sharing
+                    </Button>
+                  ) : (
+                    <Button 
+                      variant="default"
+                      onClick={openShareDialog}
+                      className="flex items-center gap-2"
+                    >
+                      <Share2 className="h-4 w-4" />
+                      Share with Support
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="flex justify-between mt-2">
+            ) : (
+              <div className="space-y-4">
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
                   <Button 
-                    variant="outline" 
-                    onClick={openSerialConfigDialog}
-                    className="flex items-center gap-2"
+                    onClick={scanForDevices} 
+                    className="w-full flex items-center gap-2"
+                    disabled={isScanning}
                   >
-                    <Settings className="h-4 w-4" />
-                    Serial Config
+                    {isScanning ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <BluetoothSearching className="h-4 w-4" />
+                        Scan for Devices
+                      </>
+                    )}
                   </Button>
                 </div>
-                {isSharingSession ? (
-                  <Button 
-                    variant="destructive"
-                    onClick={stopSharingSession}
-                    className="flex items-center gap-2"
-                  >
-                    <Share2 className="h-4 w-4" />
-                    Stop Sharing
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="default"
-                    onClick={openShareDialog}
-                    className="flex items-center gap-2"
-                  >
-                    <Share2 className="h-4 w-4" />
-                    Share with Support
-                  </Button>
+                
+                {availableDevices.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Available Devices</h3>
+                    <div className="border rounded-md divide-y">
+                      {availableDevices.map((device) => (
+                        <div key={device.id} className="p-3 flex justify-between items-center hover:bg-accent">
+                          <div className="flex items-center gap-2">
+                            <Bluetooth className="h-4 w-4 text-primary" />
+                            <span>{device.name}</span>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            onClick={() => connectToDevice(device.id)}
+                          >
+                            Connect
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-            </div>
+            )
           ) : (
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <Button 
-                  onClick={scanForDevices} 
-                  className="w-full flex items-center gap-2"
-                  disabled={isScanning}
-                >
-                  {isScanning ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Scanning...
-                    </>
-                  ) : (
-                    <>
-                      <BluetoothSearching className="h-4 w-4" />
-                      Scan for Devices
-                    </>
-                  )}
-                </Button>
-              </div>
-              
-              {availableDevices.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium">Available Devices</h3>
-                  <div className="border rounded-md divide-y">
-                    {availableDevices.map((device) => (
-                      <div key={device.id} className="p-3 flex justify-between items-center hover:bg-accent">
-                        <div className="flex items-center gap-2">
-                          <Bluetooth className="h-4 w-4 text-primary" />
-                          <span>{device.name}</span>
-                        </div>
-                        <Button 
-                          size="sm" 
-                          onClick={() => connectToDevice(device.id)}
-                        >
-                          Connect
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <Alert variant="destructive" className="animate-pulse">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Bluetooth Not Available</AlertTitle>
+              <AlertDescription>
+                Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera on a compatible device.
+              </AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>
