@@ -1,3 +1,4 @@
+
 import sessionService from './SessionService';
 
 export interface BluetoothDevice {
@@ -51,6 +52,7 @@ class BluetoothService {
     flowControl: "none"
   };
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private scannedDevices: BluetoothDevice[] = []; // Store devices from scan to use during connect
 
   // Helper to categorize Bluetooth errors
   private parseBluetoothError(error: any): BluetoothError {
@@ -108,6 +110,12 @@ class BluetoothService {
         message: 'Failed to connect to the Bluetooth device',
         originalError: error instanceof Error ? error : undefined
       };
+    } else if (errorMessage.includes('getDevices is not a function')) {
+      errorInfo = {
+        type: 'not-supported',
+        message: 'This browser does not fully support the Web Bluetooth API',
+        originalError: error instanceof Error ? error : undefined
+      };
     }
     
     return errorInfo;
@@ -141,11 +149,16 @@ class BluetoothService {
       });
 
       if (device) {
-        return [{
+        const bluetoothDevice = {
           id: device.id,
           name: device.name || "Unknown Device",
           device: device
-        }];
+        };
+        
+        // Store the device for later use during connect
+        this.scannedDevices = [bluetoothDevice];
+        
+        return [bluetoothDevice];
       }
       return [];
     } catch (error) {
@@ -161,18 +174,17 @@ class BluetoothService {
     }
 
     try {
-      // Find the device with matching ID from the available devices
-      const devices = await navigator.bluetooth.getDevices();
-      const matchingDevice = devices.find(d => d.id === deviceId);
+      // Find the device with matching ID from our stored devices from scan
+      const matchingDevice = this.scannedDevices.find(d => d.id === deviceId);
 
-      if (!matchingDevice) {
+      if (!matchingDevice || !matchingDevice.device) {
         throw new Error(`Device with ID ${deviceId} not found`);
       }
 
       console.log(`Connecting to device: ${deviceId}`);
       
       // Connect to the GATT server
-      const server = await matchingDevice.gatt?.connect();
+      const server = await matchingDevice.device.gatt?.connect();
       if (!server) {
         throw new Error("Failed to connect to GATT server");
       }
@@ -223,11 +235,7 @@ class BluetoothService {
       }
 
       // Store the connected device
-      this.connectedDevice = {
-        id: matchingDevice.id,
-        name: matchingDevice.name || "Unknown Device",
-        device: matchingDevice
-      };
+      this.connectedDevice = matchingDevice;
       
       console.log(`Successfully connected to ${this.connectedDevice.name}`);
     } catch (error) {
