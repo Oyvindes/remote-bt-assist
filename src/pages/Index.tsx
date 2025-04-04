@@ -51,7 +51,7 @@ const Index = () => {
           <Button 
             variant="outline" 
             onClick={handleLogout}
-            className="text-white hover:text-white"
+            className="text-primary hover:text-primary"
           >
             Logout
           </Button>
