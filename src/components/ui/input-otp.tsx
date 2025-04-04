@@ -35,12 +35,13 @@ const InputOTPSlot = React.forwardRef<
 >(({ index, className, ...props }, ref) => {
   const inputOTPContext = React.useContext(OTPInputContext)
   
-  // Only access slots if context exists and has slots
+  // Get the slot at the given index, or use an empty object as fallback
   const slot = inputOTPContext?.slots?.[index] || {}
-  // Safely access properties with defaults
-  const char = slot.char || ""
-  const hasFakeCaret = !!slot.hasFakeCaret
-  const isActive = !!slot.isActive
+  
+  // Use optional chaining with default values to avoid TypeScript errors
+  const char = slot?.char || ""
+  const hasFakeCaret = !!slot?.hasFakeCaret
+  const isActive = !!slot?.isActive
 
   return (
     <div
