@@ -1,3 +1,4 @@
+
 import * as React from "react"
 import { OTPInput, OTPInputContext } from "input-otp"
 import { Dot } from "lucide-react"
@@ -28,12 +29,25 @@ const InputOTPGroup = React.forwardRef<
 ))
 InputOTPGroup.displayName = "InputOTPGroup"
 
+// Define a type for slot to avoid TypeScript errors
+type SlotType = {
+  char?: string;
+  hasFakeCaret?: boolean;
+  isActive?: boolean;
+}
+
 const InputOTPSlot = React.forwardRef<
   React.ElementRef<"div">,
   React.ComponentPropsWithoutRef<"div"> & { index: number }
 >(({ index, className, ...props }, ref) => {
   const inputOTPContext = React.useContext(OTPInputContext)
-  const { char, hasFakeCaret, isActive } = inputOTPContext.slots[index]
+  
+  // Get the slot at the given index, or use an empty object as fallback with the correct type
+  const slot = (inputOTPContext?.slots?.[index] || {}) as SlotType
+  
+  const char = slot.char || ""
+  const hasFakeCaret = !!slot.hasFakeCaret
+  const isActive = !!slot.isActive
 
   return (
     <div
