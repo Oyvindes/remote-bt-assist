@@ -1,6 +1,5 @@
 
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   InputOTP,
@@ -46,7 +45,7 @@ export const PinAuth = ({ onSuccess }: PinAuthProps) => {
           render={({ slots }) => (
             <InputOTPGroup>
               {slots.map((slot, index) => (
-                <InputOTPSlot key={index} {...slot} />
+                <InputOTPSlot key={index} {...slot} index={index} />
               ))}
             </InputOTPGroup>
           )}
