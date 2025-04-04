@@ -48,7 +48,11 @@ const Index = () => {
             <Bluetooth className="h-6 w-6" />
             <h1 className="text-xl font-bold">Remote BT Assist</h1>
           </div>
-          <Button variant="outline" onClick={handleLogout}>
+          <Button 
+            variant="outline" 
+            onClick={handleLogout}
+            className="text-white hover:text-white"
+          >
             Logout
           </Button>
         </div>
