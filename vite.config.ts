@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
     open: true, // Automatically open browser
     hmr: {
       // Enable HMR for external devices
-      host: "0.0.0.0",
+      // Don't specify host here - let Vite determine it automatically
       port: 8080,
       protocol: "ws",
     },

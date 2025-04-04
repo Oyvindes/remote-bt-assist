@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield, Terminal } from "lucide-react";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield, Terminal, Trash2, UserCircle } from "lucide-react";
 import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig, BluetoothError } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -115,9 +115,15 @@ export const UserDeviceView = () => {
   }, []);
 
   useEffect(() => {
+    // Scroll to bottom when serialOutput changes
     if (scrollAreaRef.current) {
-      const scrollArea = scrollAreaRef.current;
-      scrollArea.scrollTop = scrollArea.scrollHeight;
+      // Use setTimeout to ensure the DOM has updated before scrolling
+      setTimeout(() => {
+        const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+      }, 0);
     }
   }, [serialOutput]);
 
@@ -813,111 +819,213 @@ export const UserDeviceView = () => {
         <CardContent>
           {bluetoothService.isWebBluetoothAvailable() ? (
             isConnected ? (
-              <div className="flex flex-col gap-2">
-                <div className="bg-green-50 text-green-700 p-3 rounded-md flex items-center gap-2">
-                  <Bluetooth className="h-4 w-4" />
-                  <p>Connected to: {device?.name}</p>
-                </div>
-                <div className="flex justify-between mt-2">
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={disconnectDevice}>Disconnect</Button>
+              <div className="space-y-4">
+                {/* Enhanced Connection Status Card */}
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="bg-green-100 p-2 rounded-full">
+                          <Bluetooth className="h-6 w-6 text-green-600" />
+                        </div>
+                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></span>
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-green-800">{device?.name}</h3>
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                          Connected and ready
+                        </p>
+                      </div>
+                    </div>
                     <Button
                       variant="outline"
-                      onClick={openSerialConfigDialog}
-                      className="flex items-center gap-2"
+                      size="sm"
+                      onClick={disconnectDevice}
+                      className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                     >
-                      <Settings className="h-4 w-4" />
-                      Serial Config
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        // Test sending a command directly
-                        bluetoothService.sendCommand("AT+CFG")
-                          .then(() => {
-                            console.log("Test command sent successfully");
-                            toast({
-                              title: "Test Command Sent",
-                              description: "AT+CFG command sent to device",
-                            });
-                          })
-                          .catch(error => {
-                            console.error("Error sending test command:", error);
-                            toast({
-                              title: "Test Command Failed",
-                              description: "Failed to send AT+CFG command",
-                              variant: "destructive",
-                            });
-                          });
-                      }}
-                      className="flex items-center gap-2"
-                    >
-                      <Terminal className="h-4 w-4" />
-                      Test Command
+                      Disconnect
                     </Button>
                   </div>
-                  {isSharingSession ? (
-                    <Button
-                      variant="destructive"
-                      onClick={stopSharingSession}
-                      className="flex items-center gap-2"
-                    >
-                      <Share2 className="h-4 w-4" />
-                      Stop Sharing
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      onClick={openShareDialog}
-                      className="flex items-center gap-2"
-                    >
-                      <Share2 className="h-4 w-4" />
-                      Share with Support
-                    </Button>
-                  )}
+                </div>
+
+                {/* Device Controls */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border rounded-lg p-3 hover:border-primary hover:bg-primary/5 transition-colors">
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                      Device Configuration
+                    </h4>
+                    <div className="space-y-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={openSerialConfigDialog}
+                        className="w-full justify-start text-sm"
+                      >
+                        <Settings className="h-3.5 w-3.5 mr-1.5" />
+                        Serial Config
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          bluetoothService.sendCommand("AT+CFG")
+                            .then(() => {
+                              console.log("Test command sent successfully");
+                              toast({
+                                title: "Test Command Sent",
+                                description: "AT+CFG command sent to device",
+                              });
+                            })
+                            .catch(error => {
+                              console.error("Error sending test command:", error);
+                              toast({
+                                title: "Test Command Failed",
+                                description: "Failed to send AT+CFG command",
+                                variant: "destructive",
+                              });
+                            });
+                        }}
+                        className="w-full justify-start text-sm"
+                      >
+                        <Terminal className="h-3.5 w-3.5 mr-1.5" />
+                        Test Command
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-3 hover:border-primary hover:bg-primary/5 transition-colors">
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Share2 className="h-4 w-4 text-muted-foreground" />
+                      Remote Support
+                    </h4>
+                    <div className="space-y-2">
+                      {isSharingSession ? (
+                        <>
+                          <div className="bg-blue-50 text-blue-700 text-xs p-2 rounded flex items-center gap-1.5 mb-2">
+                            <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                            Session active: {activeSession?.name}
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={stopSharingSession}
+                            className="w-full"
+                          >
+                            <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                            Stop Sharing
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={openShareDialog}
+                          className="w-full"
+                        >
+                          <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                          Share with Support
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="flex gap-2">
+              <div className="space-y-6">
+                {/* Scanning UI with radar animation */}
+                <div className="relative">
                   <Button
                     onClick={scanForDevices}
-                    className="w-full flex items-center gap-2"
+                    className="w-full flex items-center gap-2 h-12"
                     disabled={isScanning}
+                    variant="default"
                   >
                     {isScanning ? (
                       <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Scanning...
+                        <div className="relative">
+                          <BluetoothSearching className="h-5 w-5 z-10 relative" />
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-primary/10 rounded-full animate-ping" />
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 bg-primary/20 rounded-full animate-ping animation-delay-300" />
+                        </div>
+                        <span className="font-medium">Scanning for Devices...</span>
                       </>
                     ) : (
                       <>
-                        <BluetoothSearching className="h-4 w-4" />
-                        Scan for Devices
+                        <BluetoothSearching className="h-5 w-5" />
+                        <span className="font-medium">Scan for Bluetooth Devices</span>
                       </>
                     )}
                   </Button>
+
+                  {isScanning && (
+                    <div className="mt-2 text-center text-sm text-muted-foreground animate-pulse">
+                      Make sure your Bluetooth device is powered on and in pairing mode
+                    </div>
+                  )}
                 </div>
 
+                {/* Available Devices List with Enhanced Cards */}
                 {availableDevices.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium">Available Devices</h3>
-                    <div className="border rounded-md divide-y">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium flex items-center gap-1.5">
+                        <Bluetooth className="h-4 w-4 text-primary" />
+                        Available Devices
+                        <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
+                          {availableDevices.length}
+                        </span>
+                      </h3>
+                    </div>
+
+                    <div className="grid gap-3">
                       {availableDevices.map((device) => (
-                        <div key={device.id} className="p-3 flex justify-between items-center hover:bg-accent">
-                          <div className="flex items-center gap-2">
-                            <Bluetooth className="h-4 w-4 text-primary" />
-                            <span>{device.name}</span>
+                        <div
+                          key={device.id}
+                          className="border rounded-lg p-4 hover:border-primary hover:bg-primary/5 transition-colors group relative"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <div className="bg-primary/10 p-1.5 rounded-full text-primary">
+                                  <Bluetooth className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h4 className="font-medium group-hover:text-primary transition-colors">{device.name}</h4>
+                                  <p className="text-xs text-muted-foreground">ID: {device.id.substring(0, 8)}...</p>
+                                </div>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={() => connectToDevice(device.id)}
+                              className="relative overflow-hidden group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                            >
+                              <span className="relative z-10">Connect</span>
+                              <span className="absolute inset-0 bg-primary scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300"></span>
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            onClick={() => connectToDevice(device.id)}
-                          >
-                            Connect
-                          </Button>
+                          <div className="absolute top-0 right-0 w-2 h-2 rounded-full bg-green-400 mt-2 mr-2 animate-pulse"></div>
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* No devices found state */}
+                {!isScanning && availableDevices.length === 0 && (
+                  <div className="border border-dashed rounded-lg p-6 text-center">
+                    <BluetoothSearching className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <h3 className="text-sm font-medium mb-1">No Devices Found</h3>
+                    <p className="text-xs text-muted-foreground mb-4">Try scanning again or check your device is in pairing mode</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={scanForDevices}
+                      className="mx-auto"
+                    >
+                      Scan Again
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1098,22 +1206,94 @@ export const UserDeviceView = () => {
 
       {
         isSharingSession && activeSession && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
-            <p className="font-medium">Session "{activeSession.name}" is currently being shared with support</p>
-            <p className="text-sm mt-1">Session ID: {activeSession.id}</p>
-            <p className="text-sm mt-1">All serial data is visible to the support agent</p>
-          </div>
+          <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-100 p-2 rounded-full mt-1">
+                  <Share2 className="h-5 w-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-blue-800 flex items-center gap-2">
+                      Active Support Session
+                      <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                        Live
+                      </span>
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={stopSharingSession}
+                      className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      End Session
+                    </Button>
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <UserCircle className="h-4 w-4 text-blue-500" />
+                      <p className="text-sm text-blue-700 font-medium">{activeSession.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 text-xs text-blue-600">
+                        <span className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-700">{activeSession.id}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-xs text-blue-600 hover:text-blue-800"
+                          onClick={() => {
+                            navigator.clipboard.writeText(activeSession.id);
+                            toast({
+                              title: "Session ID Copied",
+                              description: "Session ID has been copied to clipboard",
+                            });
+                          }}
+                        >
+                          Copy ID
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 bg-blue-100/50 border border-blue-200 rounded p-2 text-xs text-blue-700">
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-blue-500 mt-0.5" />
+                      <p>All device communication is visible to the support agent. They can send commands to your device.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )
       }
 
       <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Share with Support</DialogTitle>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="bg-blue-100 p-1.5 rounded-full">
+                <Share2 className="h-5 w-5 text-blue-600" />
+              </div>
+              <DialogTitle>Share Device with Support</DialogTitle>
+            </div>
             <DialogDescription>
-              Name your session so support can easily identify your device
+              Create a secure session to allow remote support for your device
             </DialogDescription>
           </DialogHeader>
+
+          <div className="py-2">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
+              <h4 className="text-sm font-medium text-blue-800 mb-1 flex items-center gap-1.5">
+                <Bluetooth className="h-4 w-4" />
+                Connected Device
+              </h4>
+              <p className="text-sm text-blue-700">
+                {device?.name || "Unknown Device"}
+              </p>
+            </div>
+          </div>
 
           <Form {...sessionForm}>
             <form onSubmit={sessionForm.handleSubmit(onShareSessionSubmit)} className="space-y-4">
@@ -1122,23 +1302,53 @@ export const UserDeviceView = () => {
                 name="sessionName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Session Name</FormLabel>
+                    <FormLabel className="flex items-center gap-1.5">
+                      Session Name
+                      <span className="bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded">Required</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="My Device Session" {...field} />
+                      <div className="relative">
+                        <Input
+                          placeholder="My Device Session"
+                          {...field}
+                          className="pl-9"
+                        />
+                        <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      </div>
                     </FormControl>
-                    <FormDescription>
-                      Give your session a descriptive name.
+                    <FormDescription className="flex items-center gap-1.5 text-xs">
+                      <span className="inline-block w-1 h-1 bg-blue-500 rounded-full"></span>
+                      This name helps support identify your session
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <DialogFooter>
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800 text-sm">
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="font-medium mb-1">Support Session Information</p>
+                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-700">
+                      <li>Support will be able to send commands to your device</li>
+                      <li>You can end the session at any time</li>
+                      <li>All commands are logged for your security</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
                 <Button type="button" variant="outline" onClick={() => setIsSessionDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Share Session</Button>
+                <Button type="submit" className="gap-1.5">
+                  <Share2 className="h-4 w-4" />
+                  Start Support Session
+                </Button>
               </DialogFooter>
             </form>
           </Form>
