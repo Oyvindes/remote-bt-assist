@@ -6,10 +6,15 @@ import { UserDeviceView } from "@/components/UserDeviceView";
 import { SupportView } from "@/components/SupportView";
 import { Bluetooth } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { BluetoothDeviceList } from "@/components/BluetoothDeviceList";
+import { BluetoothDevice } from "@/services/BluetoothService";
+import bluetoothService from "@/services/BluetoothService";
+import { toast } from "sonner";
 
 const Index = () => {
   const [currentTab, setCurrentTab] = useState<string>("user");
   const [accessMode, setAccessMode] = useState<string | null>(null);
+  const [showDeviceList, setShowDeviceList] = useState<boolean>(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -39,6 +44,17 @@ const Index = () => {
     navigate('/login');
   };
 
+  const handleDeviceSelected = async (device: BluetoothDevice) => {
+    try {
+      await bluetoothService.connectToDevice(device.id);
+      setShowDeviceList(false);
+      toast.success(`Connected to ${device.name}`);
+    } catch (error) {
+      console.error("Error connecting to device:", error);
+      toast.error("Failed to connect to device. Please try again.");
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       {/* Header */}
@@ -60,29 +76,49 @@ const Index = () => {
 
       {/* Main Content */}
       <main className="flex-1 container mx-auto p-4 md:p-6">
-        <Tabs 
-          defaultValue="user" 
-          value={currentTab} 
-          onValueChange={handleTabChange} 
-          className="w-full"
-        >
-          <TabsList className={`grid w-full ${accessMode === 'both' ? 'grid-cols-2' : 'grid-cols-1'} mb-8`}>
-            <TabsTrigger value="user">Device (User)</TabsTrigger>
-            {accessMode === 'both' && (
-              <TabsTrigger value="support">Support (Helper)</TabsTrigger>
-            )}
-          </TabsList>
-          
-          <TabsContent value="user" className="space-y-4">
-            <UserDeviceView />
-          </TabsContent>
-          
-          {accessMode === 'both' && (
-            <TabsContent value="support" className="space-y-4">
-              <SupportView />
+        {showDeviceList ? (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Connect to Bluetooth Device</h2>
+              <Button variant="ghost" onClick={() => setShowDeviceList(false)}>
+                Cancel
+              </Button>
+            </div>
+            <BluetoothDeviceList onDeviceSelected={handleDeviceSelected} />
+          </div>
+        ) : (
+          <Tabs 
+            defaultValue="user" 
+            value={currentTab} 
+            onValueChange={handleTabChange} 
+            className="w-full"
+          >
+            <TabsList className={`grid w-full ${accessMode === 'both' ? 'grid-cols-2' : 'grid-cols-1'} mb-8`}>
+              <TabsTrigger value="user">Device (User)</TabsTrigger>
+              {accessMode === 'both' && (
+                <TabsTrigger value="support">Support (Helper)</TabsTrigger>
+              )}
+            </TabsList>
+            
+            <TabsContent value="user" className="space-y-4">
+              <Button 
+                variant="outline"
+                className="mb-4 flex gap-2"
+                onClick={() => setShowDeviceList(true)}
+              >
+                <Bluetooth size={16} />
+                Search for Bluetooth Devices
+              </Button>
+              <UserDeviceView />
             </TabsContent>
-          )}
-        </Tabs>
+            
+            {accessMode === 'both' && (
+              <TabsContent value="support" className="space-y-4">
+                <SupportView />
+              </TabsContent>
+            )}
+          </Tabs>
+        )}
       </main>
 
       {/* Footer */}

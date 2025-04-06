@@ -417,6 +417,57 @@ class BluetoothService {
     }
   }
 
+  // New method to scan for devices without using the browser dialog
+  async scanForDevicesWithoutDialog(): Promise<BluetoothDevice[]> {
+    if (!this.isWebBluetoothAvailable()) {
+      console.error("Web Bluetooth API is not available in this browser/environment");
+      throw this.parseBluetoothError(new Error("Web Bluetooth API is not available in this browser/environment"));
+    }
+
+    try {
+      console.log("Starting scan for Bluetooth devices without dialog...");
+      
+      // Check if the getDevices method is available in this browser
+      if (!navigator.bluetooth.getDevices) {
+        console.warn("getDevices method not available, falling back to requestDevice dialog");
+        // Fall back to the regular dialog method if getDevices isn't supported
+        return this.scanForDevices();
+      }
+      
+      // This will return devices the user has previously granted permission to access
+      const devices = await navigator.bluetooth.getDevices();
+      console.log(`Found ${devices.length} previously paired devices`);
+      
+      // Filter for devices with names starting with '86'
+      const filteredDevices = devices.filter(device => {
+        const deviceName = device.name || "";
+        return deviceName.startsWith('86');
+      });
+      
+      // Map the devices to our BluetoothDevice interface
+      const bluetoothDevices = filteredDevices.map(device => ({
+        id: device.id,
+        name: device.name || "Unknown Device",
+        device: device
+      }));
+      
+      // Store the devices for later use
+      this.scannedDevices = bluetoothDevices;
+      
+      // If no previously paired devices were found, we still need to scan for new ones
+      // using the dialog approach since Web Bluetooth doesn't allow background scanning
+      if (bluetoothDevices.length === 0) {
+        console.log("No previously paired '86' devices found, using dialog to scan for new devices");
+        return this.scanForDevices();
+      }
+      
+      return bluetoothDevices;
+    } catch (error) {
+      console.error("Error scanning for Bluetooth devices:", error);
+      throw this.parseBluetoothError(error);
+    }
+  }
+
   // Original method kept for reference or fallback
   async scanForDevicesWithDialog(): Promise<BluetoothDevice[]> {
     if (!this.isWebBluetoothAvailable()) {
