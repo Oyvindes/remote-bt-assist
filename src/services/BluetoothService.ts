@@ -552,22 +552,39 @@ class BluetoothService {
     }
   }
 
-  // New method to format bluetooth data - replace AT+ prefixes with line breaks
+  // Enhanced method to format bluetooth data with better line detection
   private formatBluetoothData(data: string): string {
-    // Replace each space with a newline as before
-    let formattedData = data.replace(/ /g, '\n');
+    // Start with clean data
+    let formattedData = data;
     
-    // Additionally, ensure each AT+ command is on its own line
+    // Make sure AT+ commands start on a new line
     formattedData = formattedData.replace(/AT\+/g, '\nAT+');
     
-    // Handle special cases like OK at the end
-    formattedData = formattedData.replace(/\nOK/g, '\n\nOK');
+    // Handle special OK response on its own line
+    formattedData = formattedData.replace(/OK/g, '\n\nOK');
     
-    // Ensure we don't have empty lines at the beginning
+    // Break at each AT command parameter
+    formattedData = formattedData.replace(/(\s)AT\+/g, '\nAT+');
+    
+    // Break lines on these common delimiters
+    const delimiters = ["=", " "];
+    delimiters.forEach(delimiter => {
+      // Replace each delimiter with the delimiter followed by a newline
+      const regex = new RegExp(`${delimiter}`, 'g');
+      formattedData = formattedData.replace(regex, `${delimiter}\n`);
+    });
+    
+    // Fix line breaks for error messages
+    formattedData = formattedData.replace(/ERROR/g, '\nERROR\n');
+    
+    // Remove any empty lines at the beginning
     formattedData = formattedData.replace(/^\n+/, '');
     
     // Clean up multiple consecutive newlines
     formattedData = formattedData.replace(/\n{3,}/g, '\n\n');
+    
+    // Fix any lines with just a single character (usually remnants)
+    formattedData = formattedData.replace(/\n(.)\n/g, '\n$1');
     
     return formattedData;
   }
