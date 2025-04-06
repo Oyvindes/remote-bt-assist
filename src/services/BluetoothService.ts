@@ -1,4 +1,3 @@
-
 import sessionService from './SessionService';
 import { supabase } from "@/integrations/supabase/client";
 
@@ -553,10 +552,24 @@ class BluetoothService {
     }
   }
 
-  // New method to format bluetooth data - replace spaces with newlines
+  // New method to format bluetooth data - replace AT+ prefixes with line breaks
   private formatBluetoothData(data: string): string {
-    // Replace each space with a line break
-    return data.replace(/ /g, '\n');
+    // Replace each space with a newline as before
+    let formattedData = data.replace(/ /g, '\n');
+    
+    // Additionally, ensure each AT+ command is on its own line
+    formattedData = formattedData.replace(/AT\+/g, '\nAT+');
+    
+    // Handle special cases like OK at the end
+    formattedData = formattedData.replace(/\nOK/g, '\n\nOK');
+    
+    // Ensure we don't have empty lines at the beginning
+    formattedData = formattedData.replace(/^\n+/, '');
+    
+    // Clean up multiple consecutive newlines
+    formattedData = formattedData.replace(/\n{3,}/g, '\n\n');
+    
+    return formattedData;
   }
 
   // Save device data to the database for support view
