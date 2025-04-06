@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -954,4 +955,479 @@ export const UserDeviceView = () => {
                       {isSharingSession ? (
                         <>
                           <div className="bg-blue-50 text-blue-700 text-xs p-2 rounded flex items-center gap-1.5 mb-2">
-                            <span className="inline-block w-1.5 h-1.5
+                            <Shield className="h-3 w-3" />
+                            Sharing: {activeSession?.name}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={stopSharingSession}
+                            className="w-full justify-start text-sm border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                            Stop Sharing
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={openShareDialog}
+                          className="w-full justify-start text-sm"
+                        >
+                          <UserCircle className="h-3.5 w-3.5 mr-1.5" />
+                          Share Device
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="border rounded p-4 bg-muted/30">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <BluetoothSearching className="h-6 w-6 text-muted-foreground" />
+                      <div>
+                        <h3 className="text-sm font-medium">No Device Connected</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Scan for Bluetooth devices to get started
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={requestBluetoothPermission}
+                      variant="default"
+                      disabled={isRequestingPermission}
+                    >
+                      {isRequestingPermission ? "Requesting..." : "Request Bluetooth Permission"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium">Available Devices</h3>
+                    <Button
+                      onClick={scanForDevices}
+                      variant="outline"
+                      size="sm"
+                      disabled={isScanning}
+                      className="flex items-center gap-1.5"
+                    >
+                      {isScanning ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      {isScanning ? "Scanning..." : "Scan"}
+                    </Button>
+                  </div>
+
+                  <div className="border rounded">
+                    {availableDevices.length === 0 ? (
+                      <div className="p-8 text-center text-muted-foreground">
+                        <BluetoothSearching className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No devices found</p>
+                        <p className="text-xs mt-1 max-w-xs mx-auto">
+                          Click "Scan" to search for nearby Bluetooth devices.
+                          Make sure your device is powered on and in pairing mode.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="divide-y">
+                        {availableDevices.map((device) => (
+                          <div
+                            key={device.id}
+                            className="p-3 hover:bg-muted/30 transition-colors"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-3">
+                                <Bluetooth className="h-4 w-4 text-primary" />
+                                <div>
+                                  <h4 className="text-sm font-medium">{device.name || "Unknown Device"}</h4>
+                                  <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                    {device.id}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                onClick={() => connectToDevice(device.id)}
+                              >
+                                Connect
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          ) : (
+            <div className="border rounded p-4 bg-yellow-50">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-yellow-800">Bluetooth Not Supported</h3>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    Your browser doesn't support Web Bluetooth.
+                    Try using Chrome, Edge, or Opera on a compatible device.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Main interface - only shown when connected */}
+      {isConnected && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Left panel - Serial Monitor */}
+          <Card className="lg:col-span-3">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Terminal className="h-5 w-5" />
+                Serial Monitor
+              </CardTitle>
+              <CardDescription>
+                View and send commands to your Bluetooth device
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="relative border rounded bg-muted/10 overflow-hidden">
+                <ScrollArea className="h-80" ref={scrollAreaRef}>
+                  <div className="p-4 font-mono text-sm">
+                    {serialOutput.length === 0 ? (
+                      <div className="text-center text-muted-foreground p-8">
+                        <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>No output yet</p>
+                        <p className="text-xs mt-1">Send a command to see the response</p>
+                      </div>
+                    ) : (
+                      <>
+                        {serialOutput.map((line, i) => {
+                          // Check if this is a command line (starts with >)
+                          const isCommand = line.startsWith(">");
+                          // Check if it's a support command
+                          const isSupport = line.startsWith("> [Support]");
+
+                          return (
+                            <div
+                              key={i}
+                              className={`py-0.5 ${isCommand ? (isSupport ? "text-blue-600" : "text-green-600") : ""}`}
+                            >
+                              {line}
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 rounded-full opacity-70 hover:opacity-100"
+                          onClick={() => setSerialOutput([])}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Clear output</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    placeholder="Enter AT command..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendCommand();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  onClick={sendCommand}
+                  disabled={isSending || command.trim() === ""}
+                >
+                  {isSending ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  <span className="ml-2">Send</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Right panel - AT Commands Reference */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <List className="h-5 w-5" />
+                AT Commands
+              </CardTitle>
+              <CardDescription>
+                Common commands for your device
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {atCommands.map((cmd, index) => (
+                  <div 
+                    key={index} 
+                    className="border rounded p-3 hover:bg-primary/5 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <code className="text-sm font-bold text-primary">{cmd.command}</code>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyCommandToInput(cmd.command)}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Copy to input</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{cmd.description}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Share session dialog */}
+      <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Device Session</DialogTitle>
+            <DialogDescription>
+              Create a name for your session to allow remote support.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...sessionForm}>
+            <form onSubmit={sessionForm.handleSubmit(onShareSessionSubmit)} className="space-y-4">
+              <FormField
+                control={sessionForm.control}
+                name="sessionName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Session Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="My Session" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Provide a descriptive name to identify your session.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsSessionDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">Share Session</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Serial configuration dialog */}
+      <Dialog open={isSerialConfigDialogOpen} onOpenChange={setIsSerialConfigDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Serial Configuration</DialogTitle>
+            <DialogDescription>
+              Configure serial communication parameters.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...serialConfigForm}>
+            <form onSubmit={serialConfigForm.handleSubmit(onSerialConfigSubmit)} className="space-y-4">
+              <FormField
+                control={serialConfigForm.control}
+                name="baudRate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Baud Rate</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      defaultValue={field.value.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select baud rate" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="9600">9600</SelectItem>
+                        <SelectItem value="19200">19200</SelectItem>
+                        <SelectItem value="38400">38400</SelectItem>
+                        <SelectItem value="57600">57600</SelectItem>
+                        <SelectItem value="115200">115200</SelectItem>
+                        <SelectItem value="230400">230400</SelectItem>
+                        <SelectItem value="460800">460800</SelectItem>
+                        <SelectItem value="921600">921600</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={serialConfigForm.control}
+                  name="dataBits"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Data Bits</FormLabel>
+                      <Select
+                        onValueChange={(value) => field.onChange(parseInt(value))}
+                        defaultValue={field.value.toString()}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select data bits" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="6">6</SelectItem>
+                          <SelectItem value="7">7</SelectItem>
+                          <SelectItem value="8">8</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={serialConfigForm.control}
+                  name="stopBits"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Stop Bits</FormLabel>
+                      <Select
+                        onValueChange={(value) => field.onChange(parseInt(value))}
+                        defaultValue={field.value.toString()}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select stop bits" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="1">1</SelectItem>
+                          <SelectItem value="2">2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={serialConfigForm.control}
+                  name="parity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Parity</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select parity" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="even">Even</SelectItem>
+                          <SelectItem value="odd">Odd</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={serialConfigForm.control}
+                  name="flowControl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Flow Control</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select flow control" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="hardware">Hardware</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsSerialConfigDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">Save Configuration</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
