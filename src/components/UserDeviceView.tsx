@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield, Terminal, Trash2, UserCircle } from "lucide-react";
+import { Bluetooth, BluetoothSearching, Send, Share2, RefreshCw, Settings, AlertTriangle, Shield, Terminal, Trash2, UserCircle, Copy, List } from "lucide-react";
 import bluetoothService, { BluetoothDevice, ShareSession, SerialConfig, BluetoothError } from "@/services/BluetoothService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -13,8 +13,42 @@ import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import sessionService from "@/services/SessionService";
 import { supabase } from "@/integrations/supabase/client";
+
+// AT Commands reference
+const atCommands = [
+  {
+    command: "AT+PRO=",
+    description: "Set to use MQTT protocol to uplink, Payload Type select Hex payload."
+  },
+  {
+    command: "AT+SERVADDR=",
+    description: "Set MQTT server address and port"
+  },
+  {
+    command: "AT+CLIENT=",
+    description: "Set up the CLIENT of MQTT"
+  },
+  {
+    command: "AT+UNAME=",
+    description: "Set the username of MQTT"
+  },
+  {
+    command: "AT+PWD=",
+    description: "Set the password of MQTT"
+  },
+  {
+    command: "AT+PUBTOPIC=",
+    description: "Set the sending topic of MQTT"
+  },
+  {
+    command: "AT+SUBTOPIC=",
+    description: "Set the subscription topic of MQTT"
+  }
+];
 
 const sessionFormSchema = z.object({
   sessionName: z.string().min(3, {
@@ -52,6 +86,7 @@ export const UserDeviceView = () => {
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [showCommandReference, setShowCommandReference] = useState(true);
   const { toast } = useToast();
 
   const sessionForm = useForm<z.infer<typeof sessionFormSchema>>({
@@ -776,8 +811,22 @@ export const UserDeviceView = () => {
     }
   };
 
+  // Function to handle copying a command to the input field
+  const copyCommandToInput = (commandText: string) => {
+    setCommand(commandText);
+    toast({
+      title: "Command Copied",
+      description: `${commandText} ready to send`,
+    });
+  };
+
+  const toggleCommandReference = () => {
+    setShowCommandReference(!showCommandReference);
+  };
+
   return (
     <div className="space-y-4">
+      {/* Error display */}
       {bluetoothError && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -806,6 +855,7 @@ export const UserDeviceView = () => {
         </Alert>
       )}
 
+      {/* Device connection card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -904,626 +954,4 @@ export const UserDeviceView = () => {
                       {isSharingSession ? (
                         <>
                           <div className="bg-blue-50 text-blue-700 text-xs p-2 rounded flex items-center gap-1.5 mb-2">
-                            <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-                            Session active: {activeSession?.name}
-                          </div>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={stopSharingSession}
-                            className="w-full"
-                          >
-                            <Share2 className="h-3.5 w-3.5 mr-1.5" />
-                            Stop Sharing
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={openShareDialog}
-                          className="w-full"
-                        >
-                          <Share2 className="h-3.5 w-3.5 mr-1.5" />
-                          Share with Support
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Scanning UI with radar animation */}
-                <div className="relative">
-                  <Button
-                    onClick={scanForDevices}
-                    className="w-full flex items-center gap-2 h-12"
-                    disabled={isScanning}
-                    variant="default"
-                  >
-                    {isScanning ? (
-                      <>
-                        <div className="relative">
-                          <BluetoothSearching className="h-5 w-5 z-10 relative" />
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-primary/10 rounded-full animate-ping" />
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 bg-primary/20 rounded-full animate-ping animation-delay-300" />
-                        </div>
-                        <span className="font-medium">Scanning for Devices...</span>
-                      </>
-                    ) : (
-                      <>
-                        <BluetoothSearching className="h-5 w-5" />
-                        <span className="font-medium">Scan for Bluetooth Devices</span>
-                      </>
-                    )}
-                  </Button>
-
-                  {isScanning && (
-                    <div className="mt-2 text-center text-sm text-muted-foreground animate-pulse">
-                      Make sure your Bluetooth device is powered on and in pairing mode
-                    </div>
-                  )}
-                </div>
-
-                {/* Available Devices List with Enhanced Cards */}
-                {availableDevices.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium flex items-center gap-1.5">
-                        <Bluetooth className="h-4 w-4 text-primary" />
-                        Available Devices
-                        <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
-                          {availableDevices.length}
-                        </span>
-                      </h3>
-                    </div>
-
-                    <div className="grid gap-3">
-                      {availableDevices.map((device) => (
-                        <div
-                          key={device.id}
-                          className="border rounded-lg p-4 hover:border-primary hover:bg-primary/5 transition-colors group relative"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <div className="bg-primary/10 p-1.5 rounded-full text-primary">
-                                  <Bluetooth className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <h4 className="font-medium group-hover:text-primary transition-colors">{device.name}</h4>
-                                  <p className="text-xs text-muted-foreground">ID: {device.id.substring(0, 8)}...</p>
-                                </div>
-                              </div>
-                            </div>
-                            <Button
-                              onClick={() => connectToDevice(device.id)}
-                              className="relative overflow-hidden group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
-                            >
-                              <span className="relative z-10">Connect</span>
-                              <span className="absolute inset-0 bg-primary scale-x-0 group-hover:scale-x-100 origin-left transition-transform duration-300"></span>
-                            </Button>
-                          </div>
-                          <div className="absolute top-0 right-0 w-2 h-2 rounded-full bg-green-400 mt-2 mr-2 animate-pulse"></div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* No devices found state */}
-                {!isScanning && availableDevices.length === 0 && (
-                  <div className="border border-dashed rounded-lg p-6 text-center">
-                    <BluetoothSearching className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <h3 className="text-sm font-medium mb-1">No Devices Found</h3>
-                    <p className="text-xs text-muted-foreground mb-4">Try scanning again or check your device is in pairing mode</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={scanForDevices}
-                      className="mx-auto"
-                    >
-                      Scan Again
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )
-          ) : (
-            <div className="space-y-4">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Bluetooth Not Available</AlertTitle>
-                <AlertDescription>
-                  {(() => {
-                    const compatibility = bluetoothService.getBrowserCompatibilityInfo();
-                    return (
-                      <div>
-                        <p>{compatibility.message}</p>
-                        {compatibility.message.includes("iOS") && (
-                          <p className="mt-2 font-semibold">
-                            iOS devices (iPhone/iPad) do not support Web Bluetooth in any browser due to Apple restrictions.
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </AlertDescription>
-              </Alert>
-
-              {/* Always show permission button regardless of compatibility detection */}
-              {(
-                <div className="flex flex-col items-center gap-3 p-4 border rounded-md bg-blue-50">
-                  <p className="text-center text-blue-800 font-medium">
-                    Try requesting Bluetooth permission directly:
-                  </p>
-                  <Button
-                    onClick={requestBluetoothPermission}
-                    disabled={isRequestingPermission}
-                    className="flex items-center gap-2"
-                  >
-                    {isRequestingPermission ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Requesting Permission...
-                      </>
-                    ) : (
-                      <>
-                        <Shield className="h-4 w-4" />
-                        Request Bluetooth Permission
-                      </>
-                    )}
-                  </Button>
-                  <p className="text-xs text-center text-blue-600">
-                    Note: Make sure Bluetooth is enabled on your device and your browser has permission to access it.
-                  </p>
-                </div>
-              )}
-
-              {/* Debug Information Display */}
-              <div className="border border-yellow-300 bg-yellow-50 p-3 rounded-md">
-                <details>
-                  <summary className="font-medium text-yellow-800 cursor-pointer">
-                    Debug Information (Click to expand)
-                  </summary>
-                  <div className="mt-2">
-                    <p className="text-xs text-yellow-800 mb-2">
-                      This information can help diagnose Bluetooth issues:
-                    </p>
-                    <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-[200px]">
-                      {debugInfo || "No debug information available yet. Click 'Request Bluetooth Permission' to generate debug info."}
-                    </pre>
-                  </div>
-                </details>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {isConnected && (
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Serial Monitor</CardTitle>
-              <div className="text-xs text-muted-foreground">
-                {lastRefreshTime && (
-                  <div className="flex items-center gap-1">
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                    <span>Auto-refreshing every second</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <CardDescription>
-              View serial data and send commands to your device
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea
-              className="h-[300px] border rounded-md p-4 bg-black text-green-400 font-mono text-sm"
-              ref={scrollAreaRef}
-            >
-              {serialOutput.length > 0 ? (
-                serialOutput.map((line, index) => (
-                  <div key={index} className="py-1">
-                    {line.startsWith(">") ? (
-                      line.includes("[Support]") ? (
-                        <div className="flex items-center justify-between">
-                          <span className="text-blue-400">{line}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 py-0 text-xs bg-blue-900 hover:bg-blue-800 border-blue-700"
-                            onClick={() => {
-                              // Extract the command from the line
-                              const commandText = line.substring(line.indexOf("]") + 2);
-                              console.log("Executing support command via button:", commandText);
-
-                              // Send the command directly to the device
-                              bluetoothService.sendCommand(commandText)
-                                .then(() => {
-                                  console.log("Support command executed successfully");
-                                  toast({
-                                    title: "Command Executed",
-                                    description: `${commandText} sent to device`,
-                                  });
-                                })
-                                .catch(error => {
-                                  console.error("Error executing support command:", error);
-                                  toast({
-                                    title: "Command Failed",
-                                    description: `Failed to send ${commandText}`,
-                                    variant: "destructive",
-                                  });
-                                });
-                            }}
-                          >
-                            Execute
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-yellow-400">{line}</span>
-                      )
-                    ) : line.startsWith("!") ? (
-                      <span className="text-red-400">{line}</span>
-                    ) : (
-                      <span>{line}</span>
-                    )}
-                  </div>
-                ))
-              ) : (
-                <div className="text-gray-500 italic">
-                  No data received yet. Try sending a command below.
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-          <CardFooter>
-            <div className="flex w-full gap-2">
-              <Input
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="Enter AT command..."
-                onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-                disabled={isSending}
-              />
-              <Button
-                onClick={sendCommand}
-                disabled={isSending || !command.trim()}
-              >
-                {isSending ? (
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </CardFooter>
-        </Card >
-      )}
-
-      {
-        isSharingSession && activeSession && (
-          <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-100 p-2 rounded-full mt-1">
-                  <Share2 className="h-5 w-5 text-blue-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-blue-800 flex items-center gap-2">
-                      Active Support Session
-                      <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-                        Live
-                      </span>
-                    </h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={stopSharingSession}
-                      className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      End Session
-                    </Button>
-                  </div>
-                  <div className="mt-2 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <UserCircle className="h-4 w-4 text-blue-500" />
-                      <p className="text-sm text-blue-700 font-medium">{activeSession.name}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5 text-xs text-blue-600">
-                        <span className="font-mono bg-blue-100 px-1.5 py-0.5 rounded text-blue-700">{activeSession.id}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-1.5 text-xs text-blue-600 hover:text-blue-800"
-                          onClick={() => {
-                            navigator.clipboard.writeText(activeSession.id);
-                            toast({
-                              title: "Session ID Copied",
-                              description: "Session ID has been copied to clipboard",
-                            });
-                          }}
-                        >
-                          Copy ID
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-3 bg-blue-100/50 border border-blue-200 rounded p-2 text-xs text-blue-700">
-                    <div className="flex items-start gap-1.5">
-                      <AlertTriangle className="h-3.5 w-3.5 text-blue-500 mt-0.5" />
-                      <p>All device communication is visible to the support agent. They can send commands to your device.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )
-      }
-
-      <Dialog open={isSessionDialogOpen} onOpenChange={setIsSessionDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="bg-blue-100 p-1.5 rounded-full">
-                <Share2 className="h-5 w-5 text-blue-600" />
-              </div>
-              <DialogTitle>Share Device with Support</DialogTitle>
-            </div>
-            <DialogDescription>
-              Create a secure session to allow remote support for your device
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-2">
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
-              <h4 className="text-sm font-medium text-blue-800 mb-1 flex items-center gap-1.5">
-                <Bluetooth className="h-4 w-4" />
-                Connected Device
-              </h4>
-              <p className="text-sm text-blue-700">
-                {device?.name || "Unknown Device"}
-              </p>
-            </div>
-          </div>
-
-          <Form {...sessionForm}>
-            <form onSubmit={sessionForm.handleSubmit(onShareSessionSubmit)} className="space-y-4">
-              <FormField
-                control={sessionForm.control}
-                name="sessionName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-1.5">
-                      Session Name
-                      <span className="bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded">Required</span>
-                    </FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          placeholder="My Device Session"
-                          {...field}
-                          className="pl-9"
-                        />
-                        <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </FormControl>
-                    <FormDescription className="flex items-center gap-1.5 text-xs">
-                      <span className="inline-block w-1 h-1 bg-blue-500 rounded-full"></span>
-                      This name helps support identify your session
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800 text-sm">
-                <div className="flex items-start gap-2">
-                  <div className="mt-0.5">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  </div>
-                  <div>
-                    <p className="font-medium mb-1">Support Session Information</p>
-                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-700">
-                      <li>Support will be able to send commands to your device</li>
-                      <li>You can end the session at any time</li>
-                      <li>All commands are logged for your security</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setIsSessionDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="gap-1.5">
-                  <Share2 className="h-4 w-4" />
-                  Start Support Session
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isSerialConfigDialogOpen} onOpenChange={setIsSerialConfigDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Serial Configuration</DialogTitle>
-            <DialogDescription>
-              Configure the serial communication parameters
-            </DialogDescription>
-          </DialogHeader>
-
-          <Form {...serialConfigForm}>
-            <form onSubmit={serialConfigForm.handleSubmit(onSerialConfigSubmit)} className="space-y-4">
-              <FormField
-                control={serialConfigForm.control}
-                name="baudRate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Baud Rate</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      defaultValue={field.value.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select baud rate" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="1200">1200</SelectItem>
-                        <SelectItem value="2400">2400</SelectItem>
-                        <SelectItem value="4800">4800</SelectItem>
-                        <SelectItem value="9600">9600</SelectItem>
-                        <SelectItem value="19200">19200</SelectItem>
-                        <SelectItem value="38400">38400</SelectItem>
-                        <SelectItem value="57600">57600</SelectItem>
-                        <SelectItem value="115200">115200</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Communication speed in bits per second
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={serialConfigForm.control}
-                name="dataBits"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Data Bits</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      defaultValue={field.value.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select data bits" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="7">7</SelectItem>
-                        <SelectItem value="8">8</SelectItem>
-                        <SelectItem value="9">9</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Number of data bits per frame
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={serialConfigForm.control}
-                name="stopBits"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Stop Bits</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      defaultValue={field.value.toString()}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select stop bits" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="1">1</SelectItem>
-                        <SelectItem value="2">2</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Number of stop bits
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={serialConfigForm.control}
-                name="parity"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Parity</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select parity" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="even">Even</SelectItem>
-                        <SelectItem value="odd">Odd</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Type of parity checking
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={serialConfigForm.control}
-                name="flowControl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Flow Control</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select flow control" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="hardware">Hardware</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Flow control method
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsSerialConfigDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">Apply Settings</Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-    </div >
-  );
-};
+                            <span className="inline-block w-1.5 h-1.5
