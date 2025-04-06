@@ -1,3 +1,4 @@
+
 import sessionService from './SessionService';
 import { supabase } from "@/integrations/supabase/client";
 
@@ -522,12 +523,16 @@ class BluetoothService {
           const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
           if (target.value) {
             const decoder = new TextDecoder('utf-8');
-            const data = decoder.decode(target.value);
-            this.notifyDataListeners(data);
+            const rawData = decoder.decode(target.value);
+            
+            // Format the data: replace spaces with newlines
+            const formattedData = this.formatBluetoothData(rawData);
+            
+            this.notifyDataListeners(formattedData);
 
             // If we have an active shared session, send to the support view via database
             if (this.sharedSession) {
-              this.saveReceivedDataToDb(data);
+              this.saveReceivedDataToDb(formattedData);
             }
           }
         });
@@ -546,6 +551,12 @@ class BluetoothService {
       console.error("Error connecting to Bluetooth device:", error);
       throw this.parseBluetoothError(error);
     }
+  }
+
+  // New method to format bluetooth data - replace spaces with newlines
+  private formatBluetoothData(data: string): string {
+    // Replace each space with a line break
+    return data.replace(/ /g, '\n');
   }
 
   // Save device data to the database for support view

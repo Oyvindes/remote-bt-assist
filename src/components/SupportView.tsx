@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +20,6 @@ export const SupportView = () => {
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollArea = scrollAreaRef.current;
@@ -29,7 +27,6 @@ export const SupportView = () => {
     }
   }, [serialOutput]);
 
-  // Subscribe to session updates
   useEffect(() => {
     console.log("SupportView: Setting up session listener");
 
@@ -38,7 +35,6 @@ export const SupportView = () => {
       setActiveSessions(sessions);
       setIsLoading(false);
 
-      // Check if our connected session is still active
       if (connectedSession && !sessions.some(s => s.id === connectedSession)) {
         toast({
           title: "Session Ended",
@@ -50,10 +46,8 @@ export const SupportView = () => {
       }
     };
 
-    // Register listener with SessionService
     sessionService.addSessionsListener(handleSessionsUpdate);
 
-    // Force a refresh from database
     const fetchSessions = async () => {
       try {
         await sessionService.forceRefreshFromDb();
@@ -70,7 +64,6 @@ export const SupportView = () => {
     };
   }, [connectedSession, toast]);
 
-  // Function to refresh commands from the database
   const refreshCommands = async () => {
     if (!connectedSession) return;
 
@@ -103,18 +96,14 @@ export const SupportView = () => {
     }
   };
 
-  // Load existing commands when connecting to a session
   useEffect(() => {
     if (connectedSession) {
-      // Initial fetch of commands
       refreshCommands();
 
-      // Set up interval to refresh commands every second
       refreshIntervalRef.current = setInterval(() => {
         refreshCommands();
       }, 1000);
 
-      // Subscribe to real-time updates for new commands
       const channel = supabase
         .channel('session-commands')
         .on('postgres_changes', {
@@ -145,7 +134,6 @@ export const SupportView = () => {
         console.log("Cleaning up subscription and refresh interval");
         supabase.removeChannel(channel);
 
-        // Clear the refresh interval
         if (refreshIntervalRef.current) {
           clearInterval(refreshIntervalRef.current);
           refreshIntervalRef.current = null;
@@ -159,12 +147,8 @@ export const SupportView = () => {
     console.log("SupportView: Manually refreshing sessions");
 
     try {
-      // Force a refresh from database
       await sessionService.forceRefreshFromDb();
-
-      // Dump current sessions to console for debugging
       sessionService.debugDumpSessions();
-
       toast({
         title: "Refreshed Sessions",
         description: `Found ${activeSessions.length} active sessions`,
@@ -193,7 +177,6 @@ export const SupportView = () => {
         return;
       }
 
-      // Confirm deletion
       if (!window.confirm(`Are you sure you want to delete the session for ${session.user}?`)) {
         return;
       }
@@ -235,8 +218,6 @@ export const SupportView = () => {
       }
 
       setConnectedSession(sessionId);
-
-      // Initialize empty serial output (will be populated from useEffect)
       setSerialOutput([]);
 
       toast({
@@ -269,11 +250,7 @@ export const SupportView = () => {
     if (command.trim() === "" || !connectedSession) return;
 
     try {
-      // Send the command directly without any special format
-      // Log the command being sent
       console.log(`Support sending command: ${command}`);
-
-      // Add the command to the database with a unique timestamp to ensure it's processed
       const timestamp = new Date().toISOString();
       const { error } = await supabase
         .from('session_commands')
@@ -296,7 +273,6 @@ export const SupportView = () => {
         return;
       }
 
-      // Clear the command input
       setCommand("");
 
       toast({
@@ -310,6 +286,33 @@ export const SupportView = () => {
         description: "Could not send the command",
         variant: "destructive",
       });
+    }
+  };
+
+  const renderSerialOutput = (line: string) => {
+    if (line.startsWith("Support sent:")) {
+      return (
+        <div className="flex items-start gap-1.5">
+          <span className="bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">SUPPORT</span>
+          <span className="text-blue-400 whitespace-pre-wrap">{line.replace("Support sent: ", "")}</span>
+        </div>
+      );
+    } else if (line.startsWith("User sent:")) {
+      return (
+        <div className="flex items-start gap-1.5">
+          <span className="bg-yellow-900/30 text-yellow-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">USER</span>
+          <span className="text-yellow-400 whitespace-pre-wrap">{line.replace("User sent: ", "")}</span>
+        </div>
+      );
+    } else if (line.startsWith("Device response:")) {
+      return (
+        <div className="flex items-start gap-1.5">
+          <span className="bg-green-900/30 text-green-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">DEVICE</span>
+          <span className="text-green-400 whitespace-pre-wrap">{line.replace("Device response: ", "")}</span>
+        </div>
+      );
+    } else {
+      return <span className="whitespace-pre-wrap">{line}</span>;
     }
   };
 
@@ -579,24 +582,7 @@ export const SupportView = () => {
                     <div className="space-y-1">
                       {serialOutput.map((line, index) => (
                         <div key={index} className="py-0.5 leading-relaxed">
-                          {line.startsWith("Support sent:") ? (
-                            <div className="flex items-start gap-1.5">
-                              <span className="bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">SUPPORT</span>
-                              <span className="text-blue-400">{line.replace("Support sent: ", "")}</span>
-                            </div>
-                          ) : line.startsWith("User sent:") ? (
-                            <div className="flex items-start gap-1.5">
-                              <span className="bg-yellow-900/30 text-yellow-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">USER</span>
-                              <span className="text-yellow-400">{line.replace("User sent: ", "")}</span>
-                            </div>
-                          ) : line.startsWith("Device response:") ? (
-                            <div className="flex items-start gap-1.5">
-                              <span className="bg-green-900/30 text-green-400 px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5">DEVICE</span>
-                              <span className="text-green-400">{line.replace("Device response: ", "")}</span>
-                            </div>
-                          ) : (
-                            <span>{line}</span>
-                          )}
+                          {renderSerialOutput(line)}
                         </div>
                       ))}
                     </div>
