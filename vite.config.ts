@@ -5,6 +5,7 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/remote-bt-assist/' : '/',
   server: {
     host: "0.0.0.0", // Allow external access from other devices
     port: 8080,
