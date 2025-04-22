@@ -37,8 +37,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Build
-        run: npm run build
+      - name: Build for GitHub Pages
+        run: npm run build:github-pages
         env:
           # Ensure we're building in production mode
           NODE_ENV: production
