@@ -1,4 +1,3 @@
-
 import sessionService from './SessionService';
 import { supabase } from "@/integrations/supabase/client";
 
@@ -56,6 +55,8 @@ class BluetoothService {
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private scannedDevices: BluetoothDevice[] = []; // Store devices from scan to use during connect
   private isConnectionActive = false; // Track active connection state
+
+  // No predefined devices - we'll filter real devices instead
 
   // Helper to categorize Bluetooth errors
   private parseBluetoothError(error: any): BluetoothError {
@@ -365,8 +366,59 @@ class BluetoothService {
     };
   }
 
-  // Get available Bluetooth devices
+  // Get available Bluetooth devices - shows browser dialog but filters for '86' devices
   async scanForDevices(): Promise<BluetoothDevice[]> {
+    if (!this.isWebBluetoothAvailable()) {
+      console.error("Web Bluetooth API is not available in this browser/environment");
+      throw this.parseBluetoothError(new Error("Web Bluetooth API is not available in this browser/environment"));
+    }
+
+    try {
+      console.log("Scanning for '86' devices...");
+
+      // Use the browser's native dialog to scan for devices
+      const device = await navigator.bluetooth.requestDevice({
+        // Accept all devices to ensure we can filter for '86' prefix
+        acceptAllDevices: true,
+        optionalServices: [
+          'generic_access',
+          '0000ffe0-0000-1000-8000-00805f9b34fb',
+          '0000ffe1-0000-1000-8000-00805f9b34fb',
+          '0000180a-0000-1000-8000-00805f9b34fb', // Device Information Service
+          '0000180f-0000-1000-8000-00805f9b34fb'  // Battery Service
+        ]
+      });
+
+      if (device) {
+        // Check if the device name starts with '86'
+        const deviceName = device.name || "Unknown Device";
+
+        if (deviceName.startsWith('86')) {
+          const bluetoothDevice = {
+            id: device.id,
+            name: deviceName,
+            device: device
+          };
+
+          // Store the device for later use during connect
+          this.scannedDevices = [bluetoothDevice];
+          return [bluetoothDevice];
+        } else {
+          // If the device doesn't start with '86', return an empty array
+          console.log(`Device ${deviceName} doesn't start with '86', filtering out`);
+          this.scannedDevices = [];
+          return [];
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error("Error scanning for Bluetooth devices:", error);
+      throw this.parseBluetoothError(error);
+    }
+  }
+
+  // Original method kept for reference or fallback
+  async scanForDevicesWithDialog(): Promise<BluetoothDevice[]> {
     if (!this.isWebBluetoothAvailable()) {
       console.error("Web Bluetooth API is not available in this browser/environment");
       throw this.parseBluetoothError(new Error("Web Bluetooth API is not available in this browser/environment"));
@@ -470,12 +522,16 @@ class BluetoothService {
           const target = event.target as unknown as BluetoothRemoteGATTCharacteristic;
           if (target.value) {
             const decoder = new TextDecoder('utf-8');
-            const data = decoder.decode(target.value);
-            this.notifyDataListeners(data);
+            const rawData = decoder.decode(target.value);
+            
+            // Format the data: replace spaces with newlines
+            const formattedData = this.formatBluetoothData(rawData);
+            
+            this.notifyDataListeners(formattedData);
 
             // If we have an active shared session, send to the support view via database
             if (this.sharedSession) {
-              this.saveReceivedDataToDb(data);
+              this.saveReceivedDataToDb(formattedData);
             }
           }
         });
@@ -494,6 +550,43 @@ class BluetoothService {
       console.error("Error connecting to Bluetooth device:", error);
       throw this.parseBluetoothError(error);
     }
+  }
+
+  // Enhanced method to format bluetooth data with better line detection
+  private formatBluetoothData(data: string): string {
+    // Start with clean data
+    let formattedData = data;
+    
+    // Make sure AT+ commands start on a new line
+    formattedData = formattedData.replace(/AT\+/g, '\nAT+');
+    
+    // Handle special OK response on its own line
+    formattedData = formattedData.replace(/OK/g, '\n\nOK');
+    
+    // Break at each AT command parameter
+    formattedData = formattedData.replace(/(\s)AT\+/g, '\nAT+');
+    
+    // Break lines on these common delimiters
+    const delimiters = ["=", " "];
+    delimiters.forEach(delimiter => {
+      // Replace each delimiter with the delimiter followed by a newline
+      const regex = new RegExp(`${delimiter}`, 'g');
+      formattedData = formattedData.replace(regex, `${delimiter}\n`);
+    });
+    
+    // Fix line breaks for error messages
+    formattedData = formattedData.replace(/ERROR/g, '\nERROR\n');
+    
+    // Remove any empty lines at the beginning
+    formattedData = formattedData.replace(/^\n+/, '');
+    
+    // Clean up multiple consecutive newlines
+    formattedData = formattedData.replace(/\n{3,}/g, '\n\n');
+    
+    // Fix any lines with just a single character (usually remnants)
+    formattedData = formattedData.replace(/\n(.)\n/g, '\n$1');
+    
+    return formattedData;
   }
 
   // Save device data to the database for support view

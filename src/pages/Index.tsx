@@ -13,7 +13,7 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Get the access mode from session storage
+    // Get the access mode from session storage only once on component mount
     const mode = sessionStorage.getItem('accessMode');
     setAccessMode(mode);
     
@@ -21,9 +21,9 @@ const Index = () => {
     if (mode === 'device') {
       setCurrentTab('user');
     }
-  }, []);
+  }, []); // Empty dependency array ensures this only runs once on mount
 
-  // Ensure session state is updated when switching tabs
+  // Handler for tab changes
   const handleTabChange = (value: string) => {
     // If trying to access support tab when in device-only mode, block it
     if (value === 'support' && accessMode === 'device') {
@@ -34,6 +34,7 @@ const Index = () => {
     console.log(`Switched to ${value} tab`);
   };
 
+  // Handler for logout
   const handleLogout = () => {
     sessionStorage.removeItem('accessMode');
     navigate('/login');
@@ -61,7 +62,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="flex-1 container mx-auto p-4 md:p-6">
         <Tabs 
-          defaultValue="user" 
+          defaultValue={currentTab}
           value={currentTab} 
           onValueChange={handleTabChange} 
           className="w-full"
